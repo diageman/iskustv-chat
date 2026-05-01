@@ -962,9 +962,12 @@
     note.reviewStatus = status;
     note.reviewedAt = new Date().toISOString();
     note.reviewedBy = admin && admin.email ? admin.email : 'Администратор';
+    trainerReviewFilter = status === 'rejected' ? 'rejected' : 'reviewed';
     saveNotes();
+    renderStats();
+    renderCaseList();
     renderTrainerNotes();
-    openTrainerNote(caseId, userKey);
+    closeTrainerChatModal();
   }
 
   function closeTrainerChatModal() {
