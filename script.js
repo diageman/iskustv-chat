@@ -239,8 +239,24 @@
     }
   }
 
-  function getNoteText(caseId) {
-    const note = notes[caseId];
+  function getCurrentNoteKey() {
+    const user = window.IskustvAuth && window.IskustvAuth.getUser ? window.IskustvAuth.getUser() : null;
+    if (user && user.uid) return user.uid;
+    if (user && user.email) return String(user.email).toLowerCase().replace(/[^a-z0-9_-]/gi, '_');
+    return 'guest';
+  }
+
+  function getNoteByUserKey(caseId, userKey) {
+    const entry = notes[caseId];
+    if (!entry) return null;
+    if (entry.byUser) return entry.byUser[userKey || getCurrentNoteKey()] || null;
+    if (typeof entry === 'string') return { text: entry, author: 'Сотрудник' };
+    if (entry.text) return entry;
+    return null;
+  }
+
+  function getNoteText(caseId, userKey) {
+    const note = getNoteByUserKey(caseId, userKey);
     if (!note) return '';
     if (typeof note === 'string') return note;
     return note.text || '';
@@ -248,7 +264,35 @@
 
   function getNoteAuthor(note) {
     if (!note || typeof note === 'string') return 'Сотрудник';
-    return note.author || 'Сотрудник';
+    return note.author || [note.firstName, note.lastName].filter(Boolean).join(' ') || note.email || 'Сотрудник';
+  }
+
+  function getCaseNoteCount(caseId) {
+    const entry = notes[caseId];
+    if (!entry) return 0;
+    if (entry.byUser) return Object.values(entry.byUser).filter(n => n && String(n.text || '').trim()).length;
+    return getNoteText(caseId).trim() ? 1 : 0;
+  }
+
+  function getAllTrainerNoteItems() {
+    const items = [];
+    Object.keys(notes || {}).forEach(caseId => {
+      const owner = findCaseOwner(caseId);
+      if (!owner) return;
+      const entry = notes[caseId];
+      if (!entry) return;
+      if (entry.byUser) {
+        Object.keys(entry.byUser).forEach(userKey => {
+          const note = entry.byUser[userKey];
+          const text = note && String(note.text || '').trim();
+          if (text) items.push({ caseId, userKey, text, note, employee: owner.employee, caseItem: owner.caseItem });
+        });
+      } else {
+        const text = getNoteText(caseId).trim();
+        if (text) items.push({ caseId, userKey: 'legacy', text, note: entry, employee: owner.employee, caseItem: owner.caseItem });
+      }
+    });
+    return items.sort((a, b) => String(b.note.submittedAt || '').localeCompare(String(a.note.submittedAt || '')));
   }
 
   // ---------- УТИЛИТЫ ----------
@@ -504,11 +548,7 @@
   function renderStats() {
     const empCount = state.employees.length;
     const caseCount = state.employees.reduce((n, e) => n + (Array.isArray(e.cases) ? e.cases.length : 0), 0);
-    const notesCount = Object.values(notes).filter(v => {
-      if (!v) return false;
-      if (typeof v === 'string') return String(v).trim();
-      return String(v.text || '').trim();
-    }).length;
+    const notesCount = getAllTrainerNoteItems().length;
     $('stats').innerHTML = `
       <div class="header-stat"><strong>${empCount}</strong><span>сотрудников</span></div>
       <div class="header-stat"><strong>${caseCount}</strong><span>готовых чатов</span></div>
@@ -595,7 +635,7 @@
       : (caseFilter === 'unchecked' ? 'У сотрудника пока нет непроверенных чатов.' : 'У сотрудника пока нет кейсов.');
 
     list.innerHTML = visibleCases.map(c => {
-      const hasNote = !!getNoteText(c.id).trim();
+      const hasNote = getCaseNoteCount(c.id) > 0;
       return `
         <button type="button" class="case-item${c.id === state.activeCaseId ? ' active' : ''}" data-case="${escapeHtml(c.id)}">
           <span class="case-title">${escapeHtml(c.driver ? 'Чат с ' + c.driver : 'Готовый чат')}</span>
@@ -700,7 +740,7 @@
 
     renderTrainerNotes();
     renderTrash();
-    const trainerNotesCount = Object.keys(notes).filter(id => getNoteText(id).trim()).length;
+    const trainerNotesCount = getAllTrainerNoteItems().length;
     $('adminStatus').textContent = `Сотрудников: ${state.employees.length}. Кейсов всего: ${state.employees.reduce((n,e)=>n+(Array.isArray(e.cases)?e.cases.length:0),0)}. Заметок тренеру: ${trainerNotesCount}. В корзине: ${(state.trash && state.trash.employees ? state.trash.employees.length : 0)}.`;
   }
 
@@ -715,39 +755,33 @@
   function renderTrainerNotes() {
     const host = $('trainerNotesList');
     if (!host) return;
-    const items = Object.keys(notes).map(caseId => {
-      const text = getNoteText(caseId).trim();
-      if (!text) return null;
-      const owner = findCaseOwner(caseId);
-      if (!owner) return null;
-      const note = notes[caseId];
-      return { caseId, text, note, employee: owner.employee, caseItem: owner.caseItem };
-    }).filter(Boolean);
+    const items = getAllTrainerNoteItems();
 
     if (!items.length) {
-      host.innerHTML = '<div class="trainer-note-empty">Пока нет заметок от сотрудников.</div>';
+      host.innerHTML = '<div class="trainer-note-empty">Пока нет ответов от сотрудников.</div>';
       return;
     }
 
     host.innerHTML = items.map(item => {
-      const when = item.note && typeof item.note !== 'string' && item.note.submittedAt ? new Date(item.note.submittedAt).toLocaleString('ru-RU') : '';
+      const when = item.note && item.note.submittedAt ? new Date(item.note.submittedAt).toLocaleString('ru-RU') : '';
+      const email = item.note && item.note.email ? ' · ' + item.note.email : '';
       return `
-        <button class="trainer-note-item" type="button" data-open-note="${escapeHtml(item.caseId)}">
+        <button class="trainer-note-item" type="button" data-open-note="${escapeHtml(item.caseId)}" data-open-note-user="${escapeHtml(item.userKey)}">
           <div class="trainer-note-top">
             <strong>${escapeHtml(item.caseItem.driver ? 'Чат с ' + item.caseItem.driver : 'Готовый чат')}</strong>
             <span>${escapeHtml(item.caseItem.status || 'На проверке')}</span>
           </div>
-          <div class="trainer-note-meta">Сотрудник: ${escapeHtml(getNoteAuthor(item.note))}${when ? ' · ' + escapeHtml(when) : ''}</div>
+          <div class="trainer-note-meta">Ответил: ${escapeHtml(getNoteAuthor(item.note))}${escapeHtml(email)}${when ? ' · ' + escapeHtml(when) : ''}</div>
           <div class="trainer-note-text">${escapeHtml(item.text)}</div>
         </button>`;
     }).join('');
 
     host.querySelectorAll('[data-open-note]').forEach(btn => {
-      btn.addEventListener('click', () => openTrainerNote(btn.getAttribute('data-open-note')));
+      btn.addEventListener('click', () => openTrainerNote(btn.getAttribute('data-open-note'), btn.getAttribute('data-open-note-user')));
     });
   }
 
-  function openTrainerNote(caseId) {
+  function openTrainerNote(caseId, userKey) {
     const owner = findCaseOwner(caseId);
     if (!owner) return;
     const modal = $('trainerChatModal');
@@ -757,7 +791,7 @@
     const info = $('trainerChatInfo');
     const noteMeta = $('trainerChatNoteMeta');
     const noteText = $('trainerChatNoteText');
-    const note = notes[caseId];
+    const note = getNoteByUserKey(caseId, userKey);
 
     if (!modal || !title || !meta || !thread || !noteMeta || !noteText) return;
 
@@ -765,8 +799,8 @@
     const noteWhen = note && typeof note !== 'string' && note.submittedAt ? new Date(note.submittedAt).toLocaleString('ru-RU') : '';
     title.textContent = c.driver ? 'Чат с ' + c.driver : 'Готовый чат';
     meta.textContent = `${owner.employee.name || 'Сотрудник'} · ${c.status || 'На проверке'}`;
-    noteMeta.textContent = `Автор: ${getNoteAuthor(note)}${noteWhen ? ' · ' + noteWhen : ''}`;
-    noteText.textContent = getNoteText(caseId);
+    noteMeta.textContent = `Ответил: ${getNoteAuthor(note)}${note && note.email ? ' · ' + note.email : ''}${noteWhen ? ' · ' + noteWhen : ''}`;
+    noteText.textContent = note && note.text ? note.text : '';
     setCaseInfoPanel(info, '');
 
     const msgs = [];
@@ -929,18 +963,31 @@
     $('saveNoteBtn').addEventListener('click', () => {
       const c = getActiveCase(); if (!c) return;
       const v = $('operatorNote').value.trim();
+      const user = window.IskustvAuth && window.IskustvAuth.getUser ? window.IskustvAuth.getUser() : null;
+      const author = window.IskustvAuth && window.IskustvAuth.fullName ? window.IskustvAuth.fullName(user) : '';
+      const noteKey = getCurrentNoteKey();
       if (v) {
-        const user = window.IskustvAuth && window.IskustvAuth.getUser ? window.IskustvAuth.getUser() : null;
-        const author = window.IskustvAuth && window.IskustvAuth.fullName ? window.IskustvAuth.fullName(user) : '';
-        notes[c.id] = {
+        const entry = notes[c.id] && notes[c.id].byUser ? notes[c.id] : { byUser: {} };
+        entry.byUser[noteKey] = {
           text: v,
           author: author || 'Сотрудник',
+          uid: user && user.uid ? user.uid : '',
+          email: user && user.email ? user.email : '',
+          firstName: user && user.firstName ? user.firstName : '',
+          lastName: user && user.lastName ? user.lastName : '',
           employeeId: state.activeEmployeeId,
           caseId: c.id,
           submittedAt: new Date().toISOString()
         };
+        notes[c.id] = entry;
       } else {
-        delete notes[c.id];
+        const entry = notes[c.id];
+        if (entry && entry.byUser) {
+          delete entry.byUser[noteKey];
+          if (!Object.keys(entry.byUser).length) delete notes[c.id];
+        } else {
+          delete notes[c.id];
+        }
       }
       saveNotes();
       renderStats(); renderCaseList(); renderNote(); renderAdmin();

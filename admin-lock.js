@@ -2,8 +2,17 @@
 (function () {
   'use strict';
 
+  const ADMIN_MODE_KEY = 'iskustv_admin_mode_v1';
   let adminUser = null;
-  let authReady = false;
+
+  function getAdminEmails() {
+    return (window.ISKUSTV_ADMIN_EMAILS || []).map(function (x) { return String(x || '').trim().toLowerCase(); }).filter(Boolean);
+  }
+
+  function isAdminUser(user) {
+    if (!user || !user.email) return false;
+    return getAdminEmails().includes(String(user.email).trim().toLowerCase());
+  }
 
   function getAuth() {
     if (!window.firebase || !window.firebase.auth) return null;
@@ -11,9 +20,7 @@
     catch (_) { return null; }
   }
 
-  function isUnlocked() {
-    return !!adminUser;
-  }
+  function isUnlocked() { return !!adminUser; }
 
   function setAdminVisible(visible) {
     const admin = document.getElementById('admin');
@@ -47,28 +54,37 @@
   }
 
   function unlockAdmin(user) {
-    adminUser = user || null;
-    setAdminVisible(!!adminUser);
-    if (adminUser) {
-      closeModal();
-      location.hash = 'admin';
-      setTimeout(function () {
-        const admin = document.getElementById('admin');
-        if (admin) admin.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 60);
+    if (!isAdminUser(user)) {
+      adminUser = null;
+      localStorage.setItem(ADMIN_MODE_KEY, '0');
+      setAdminVisible(false);
+      return false;
     }
+    adminUser = user;
+    localStorage.setItem(ADMIN_MODE_KEY, '1');
+    setAdminVisible(true);
+    closeModal();
+    location.hash = 'admin';
+    setTimeout(function () {
+      const admin = document.getElementById('admin');
+      if (admin) admin.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+    return true;
   }
 
   function showAuthError(err) {
     const error = document.getElementById('adminLockError');
     const code = err && err.code ? err.code : '';
     let message = 'Не удалось войти. Проверьте email и пароль.';
+    if (code === 'not-admin') message = 'Этот email не добавлен в список администраторов.';
     if (code === 'auth/invalid-email') message = 'Некорректный email.';
     if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') message = 'Неверный email или пароль.';
     if (code === 'auth/too-many-requests') message = 'Слишком много попыток. Попробуйте позже.';
     if (code === 'auth/network-request-failed') message = 'Нет соединения с Firebase. Проверьте интернет.';
     if (error) error.textContent = message;
   }
+
+  window.IskustvAdminAuth = { open: openModal, close: closeModal, isUnlocked: isUnlocked };
 
   document.addEventListener('DOMContentLoaded', function () {
     document.body.classList.remove('admin-unlocked');
@@ -81,18 +97,15 @@
     } else {
       try { auth.setPersistence(window.firebase.auth.Auth.Persistence.LOCAL); } catch (_) {}
       auth.onAuthStateChanged(function (user) {
-        authReady = true;
-        adminUser = user || null;
-        setAdminVisible(!!adminUser);
-        if (adminUser) {
-          closeModal();
-          if (location.hash === '#admin') setTimeout(function () {
-            const admin = document.getElementById('admin');
-            if (admin) admin.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }, 60);
-        } else if (location.hash === '#admin') {
-          history.replaceState(null, '', location.pathname + location.search);
-          openModal();
+        if (localStorage.getItem(ADMIN_MODE_KEY) === '1' && isAdminUser(user)) {
+          unlockAdmin(user);
+        } else {
+          adminUser = null;
+          setAdminVisible(false);
+          if (location.hash === '#admin') {
+            history.replaceState(null, '', location.pathname + location.search);
+            openModal();
+          }
         }
       });
     }
@@ -123,9 +136,18 @@
           if (error) error.textContent = 'Firebase Auth не подключён. Проверьте настройки сайта.';
           return;
         }
+        localStorage.setItem(ADMIN_MODE_KEY, '1');
         authNow.signInWithEmailAndPassword(email.value.trim(), password.value)
-          .then(function (result) { unlockAdmin(result.user); })
-          .catch(showAuthError);
+          .then(function (result) {
+            if (!unlockAdmin(result.user)) {
+              return authNow.signOut().then(function () { throw { code: 'not-admin' }; });
+            }
+            return null;
+          })
+          .catch(function (err) {
+            localStorage.setItem(ADMIN_MODE_KEY, '0');
+            showAuthError(err);
+          });
       });
     }
 
@@ -133,6 +155,7 @@
     if (logoutBtn) {
       logoutBtn.addEventListener('click', function () {
         const authNow = getAuth();
+        localStorage.setItem(ADMIN_MODE_KEY, '0');
         if (!authNow) return;
         authNow.signOut().then(function () {
           adminUser = null;

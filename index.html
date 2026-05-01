@@ -270,14 +270,22 @@
   <div class="auth-modal" id="authModal" aria-hidden="true">
     <div class="auth-card">
       <div class="admin-lock-icon">👤</div>
-      <p class="section-label">Вход сотрудника</p>
-      <h2>Авторизация</h2>
-      <p>Введите имя и фамилию. Эти данные будут прикрепляться к заметкам, которые уходят бизнес-тренеру.</p>
+      <p class="section-label">Вход в тренажёр</p>
+      <h2>Войти как сотрудник</h2>
+      <p>Сотрудник регистрируется по почте. Его ответы будут видны администратору отдельно по имени, фамилии и email.</p>
       <form id="authForm" autocomplete="off">
-        <label>Имя<input id="authFirstName" type="text" autocomplete="given-name" placeholder="Например: Дарья" required></label>
-        <label>Фамилия<input id="authLastName" type="text" autocomplete="family-name" placeholder="Например: Иванова" required></label>
+        <label>Email<input id="authEmail" type="email" autocomplete="username" placeholder="name@example.com" required></label>
+        <label>Пароль<input id="authPassword" type="password" autocomplete="current-password" placeholder="Минимум 6 символов" required></label>
+        <div class="auth-name-grid">
+          <label>Имя<input id="authFirstName" type="text" autocomplete="given-name" placeholder="Например: Дарья"></label>
+          <label>Фамилия<input id="authLastName" type="text" autocomplete="family-name" placeholder="Например: Иванова"></label>
+        </div>
         <div class="admin-lock-error" id="authError" role="alert"></div>
-        <button class="save-btn admin-lock-submit" type="submit">Войти</button>
+        <div class="auth-actions-row">
+          <button class="save-btn admin-lock-submit" type="submit">Войти сотрудником</button>
+          <button class="toolbar-btn" id="employeeRegisterBtn" type="button">Зарегистрироваться</button>
+        </div>
+        <button class="auth-admin-link" id="openAdminLoginBtn" type="button">Я администратор</button>
       </form>
     </div>
   </div>
@@ -316,6 +324,7 @@
       messagingSenderId: "856885562833",
       appId: "1:856885562833:web:0baec6e01c3537087824f0"
     };
+    window.ISKUSTV_ADMIN_EMAILS = ["diage2x@gmail.com"];
   </script>
   <script src="auth.js"></script>
   <script src="script.js"></script>
