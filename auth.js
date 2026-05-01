@@ -58,6 +58,14 @@
 
   function clearUser() {
     localStorage.removeItem(USER_KEY);
+    try {
+      localStorage.removeItem('okk_review_state_v1');
+      localStorage.removeItem('okk_review_notes_v1');
+    } catch (_) {}
+  }
+
+  function notifyAccessBlocked() {
+    window.dispatchEvent(new CustomEvent('iskustv:access-blocked'));
   }
 
   function fullName(user) {
@@ -105,6 +113,7 @@
     const modal = document.getElementById('authModal');
     if (modal) modal.setAttribute('aria-hidden', 'false');
     showError(message || 'Заявка отправлена. Дождитесь подтверждения администратора.');
+    notifyAccessBlocked();
   }
 
   function showError(message) {
@@ -155,9 +164,11 @@
     const ref = db.ref('okkReview/users/' + firebaseUser.uid);
     const fn = function (snapshot) {
       const profile = snapshot.val();
-      if (!profile) return;
+      if (!profile) {
+        keepAuthLocked({ email: firebaseUser.email || '' }, 'Доступ удалён администратором. Обратитесь к администратору.');
+        return;
+      }
       if (isApprovedProfile(profile)) {
-        stopProfileWatcher();
         closeAuth(saveUser(profile));
       } else if (profile.status === 'rejected') {
         keepAuthLocked(profile, 'Доступ отклонён администратором. Обратитесь к администратору.');
@@ -197,11 +208,10 @@
 
   function handleEmployeeProfile(firebaseUser) {
     return loadEmployeeProfile(firebaseUser).then(function (profile) {
+      watchApproval(firebaseUser);
       if (isApprovedProfile(profile)) {
-        stopProfileWatcher();
         closeAuth(saveUser(profile));
       } else {
-        watchApproval(firebaseUser);
         keepAuthLocked(profile, profile && profile.status === 'rejected'
           ? 'Доступ отклонён администратором. Обратитесь к администратору.'
           : profile && profile.status === 'revoked'
@@ -282,9 +292,8 @@
         }
         if (firebaseUser) {
           handleEmployeeProfile(firebaseUser).catch(function (err) { showError(authErrorMessage(err)); });
-        } else if (cached) {
-          closeAuth(cached);
         } else {
+          clearUser();
           openAuth(null);
         }
       });

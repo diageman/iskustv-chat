@@ -139,8 +139,19 @@
   }
 
   // ---------- СОСТОЯНИЕ ----------
-  let state = loadState();
-  let notes = loadNotes();
+  function emptyState() {
+    return {
+      employees: [],
+      api: demoState().api,
+      trash: { employees: [] },
+      activeEmployeeId: null,
+      activeCaseId: null
+    };
+  }
+
+  const USE_FIREBASE_SOURCE = !!FIREBASE_CONFIG;
+  let state = USE_FIREBASE_SOURCE ? emptyState() : loadState();
+  let notes = USE_FIREBASE_SOURCE ? {} : loadNotes();
   let caseFilter = 'all';
   let employeeSearchQuery = '';
 
@@ -225,7 +236,10 @@
           applyingRemote = false;
           renderAll();
         } else if (!remote) {
-          saveState();
+          applyingRemote = true;
+          state = emptyState();
+          applyingRemote = false;
+          renderAll();
         }
       }, err => console.warn('Firebase state sync error:', err));
 
@@ -859,6 +873,7 @@
             <span class="access-status ${statusClass}">${statusText}</span>
             ${approved ? `<button class="toolbar-btn danger" type="button" data-revoke-user="${escapeHtml(u.uid || '')}">Забрать доступ</button>` : `<button class="toolbar-btn restore" type="button" data-approve-user="${escapeHtml(u.uid || '')}">Пустить</button>`}
             ${rejected || revoked ? '' : `<button class="toolbar-btn danger" type="button" data-reject-user="${escapeHtml(u.uid || '')}">Отклонить</button>`}
+            <button class="toolbar-btn access-delete-btn" type="button" data-delete-access-user="${escapeHtml(u.uid || '')}">Удалить из списка</button>
           </div>
         </div>`;
     }).join('');
@@ -871,6 +886,9 @@
     });
     host.querySelectorAll('[data-revoke-user]').forEach(btn => {
       btn.addEventListener('click', () => revokeAccessUser(btn.getAttribute('data-revoke-user')));
+    });
+    host.querySelectorAll('[data-delete-access-user]').forEach(btn => {
+      btn.addEventListener('click', () => deleteAccessUser(btn.getAttribute('data-delete-access-user')));
     });
   }
 
@@ -906,6 +924,14 @@
       revokedAt: new Date().toISOString(),
       revokedBy: admin && admin.email ? admin.email : 'admin'
     });
+  }
+
+  function deleteAccessUser(uid) {
+    if (!uid || !firebaseUsersRef) return;
+    const u = accessUsers && accessUsers[uid] ? accessUsers[uid] : null;
+    const label = u && (u.email || [u.firstName, u.lastName].filter(Boolean).join(' ')) ? (u.email || [u.firstName, u.lastName].filter(Boolean).join(' ')) : 'этого сотрудника';
+    if (!confirm(`Удалить ${label} из списка доступа? Запись исчезнет из админки.`)) return;
+    firebaseUsersRef.child(uid).remove().catch(err => console.warn('Firebase delete access user error:', err));
   }
 
   function renderTrash() {
@@ -1237,6 +1263,15 @@
     reader.readAsText(file);
   }
 
+  function clearVisibleData() {
+    applyingRemote = true;
+    state = emptyState();
+    notes = {};
+    accessUsers = {};
+    applyingRemote = false;
+    renderAll();
+  }
+
   function renderAll() {
     renderStats();
     renderEmployeeGrid();
@@ -1296,8 +1331,13 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     bindEvents();
-    renderAll();
-    initFirebaseSync();
+    window.addEventListener('iskustv:access-blocked', clearVisibleData);
+    if (USE_FIREBASE_SOURCE) {
+      initFirebaseSync();
+    } else {
+      renderAll();
+      initFirebaseSync();
+    }
     console.log('OKK Review готов. Firebase sync включён.');
   });
 })();
