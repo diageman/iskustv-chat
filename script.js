@@ -142,15 +142,37 @@
   let caseFilter = 'all';
   let employeeSearchQuery = '';
 
+  function normalizeStateData(data) {
+    const fallback = demoState();
+    if (!data || !Array.isArray(data.employees)) return fallback;
+    data.employees = data.employees.filter(Boolean).map(emp => {
+      emp.cases = Array.isArray(emp.cases) ? emp.cases.filter(Boolean) : [];
+      return emp;
+    });
+    if (!data.api) data.api = fallback.api;
+    if (!data.trash || !Array.isArray(data.trash.employees)) data.trash = { employees: [] };
+    data.trash.employees = data.trash.employees.filter(Boolean).map(emp => {
+      emp.cases = Array.isArray(emp.cases) ? emp.cases.filter(Boolean) : [];
+      return emp;
+    });
+    if (!data.activeEmployeeId && data.employees[0]) data.activeEmployeeId = data.employees[0].id;
+    const activeEmp = data.employees.find(e => e.id === data.activeEmployeeId) || data.employees[0] || null;
+    if (!activeEmp) {
+      data.activeEmployeeId = null;
+      data.activeCaseId = null;
+    } else if (!activeEmp.cases.some(c => c.id === data.activeCaseId)) {
+      data.activeEmployeeId = activeEmp.id;
+      data.activeCaseId = activeEmp.cases[0] ? activeEmp.cases[0].id : null;
+    }
+    return data;
+  }
+
   function loadState() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return demoState();
       const parsed = JSON.parse(raw);
-      if (!parsed || !Array.isArray(parsed.employees)) return demoState();
-      if (!parsed.api) parsed.api = demoState().api;
-      if (!parsed.trash || !Array.isArray(parsed.trash.employees)) parsed.trash = { employees: [] };
-      return parsed;
+      return normalizeStateData(parsed);
     } catch (_) { return demoState(); }
   }
   function saveState() {
@@ -173,16 +195,7 @@
   }
 
   function prepareRemoteState(remote) {
-    const fallback = demoState();
-    if (!remote || !Array.isArray(remote.employees)) return fallback;
-    if (!remote.api) remote.api = fallback.api;
-    if (!remote.trash || !Array.isArray(remote.trash.employees)) remote.trash = { employees: [] };
-    if (!remote.activeEmployeeId && remote.employees[0]) remote.activeEmployeeId = remote.employees[0].id;
-    if (!remote.activeCaseId) {
-      const emp = remote.employees.find(e => e.id === remote.activeEmployeeId) || remote.employees[0];
-      remote.activeCaseId = emp && emp.cases && emp.cases[0] ? emp.cases[0].id : null;
-    }
-    return remote;
+    return normalizeStateData(remote);
   }
 
   function initFirebaseSync() {
@@ -490,7 +503,7 @@
   // ---------- РЕНДЕР ----------
   function renderStats() {
     const empCount = state.employees.length;
-    const caseCount = state.employees.reduce((n, e) => n + e.cases.length, 0);
+    const caseCount = state.employees.reduce((n, e) => n + (Array.isArray(e.cases) ? e.cases.length : 0), 0);
     const notesCount = Object.values(notes).filter(v => {
       if (!v) return false;
       if (typeof v === 'string') return String(v).trim();
@@ -522,7 +535,7 @@
           <strong>${escapeHtml(e.name)}</strong>
           <span class="emp-role">${escapeHtml(e.role || '')}</span>
         </span>
-        <span class="emp-count">${e.cases.length}</span>
+        <span class="emp-count">${Array.isArray(e.cases) ? e.cases.length : 0}</span>
       </button>`).join('') || (query ? '<p class="muted">Сотрудники не найдены.</p>' : '<p class="muted">Сотрудников пока нет. Добавьте в админ-панели.</p>');
 
     grid.querySelectorAll('[data-emp]').forEach(btn => {
@@ -688,7 +701,7 @@
     renderTrainerNotes();
     renderTrash();
     const trainerNotesCount = Object.keys(notes).filter(id => getNoteText(id).trim()).length;
-    $('adminStatus').textContent = `Сотрудников: ${state.employees.length}. Кейсов всего: ${state.employees.reduce((n,e)=>n+e.cases.length,0)}. Заметок тренеру: ${trainerNotesCount}. В корзине: ${(state.trash && state.trash.employees ? state.trash.employees.length : 0)}.`;
+    $('adminStatus').textContent = `Сотрудников: ${state.employees.length}. Кейсов всего: ${state.employees.reduce((n,e)=>n+(Array.isArray(e.cases)?e.cases.length:0),0)}. Заметок тренеру: ${trainerNotesCount}. В корзине: ${(state.trash && state.trash.employees ? state.trash.employees.length : 0)}.`;
   }
 
   function findCaseOwner(caseId) {
