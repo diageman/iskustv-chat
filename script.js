@@ -950,24 +950,55 @@
   function setTrainerNoteReview(status) {
     const modal = $('trainerChatModal');
     if (!modal) return;
+
     const caseId = modal.dataset.caseId;
     const userKey = modal.dataset.userKey;
-    if (!caseId || !userKey || !notes[caseId]) return;
+    if (!caseId || !userKey || !notes[caseId]) {
+      alert('Не удалось найти ответ сотрудника. Обновите страницу и попробуйте ещё раз.');
+      return;
+    }
+
     const entry = notes[caseId];
     let note = null;
-    if (entry.byUser && entry.byUser[userKey]) note = entry.byUser[userKey];
-    else if (!entry.byUser && userKey === 'legacy') note = entry;
-    if (!note) return;
+    let firebasePath = '';
+
+    if (entry.byUser && entry.byUser[userKey]) {
+      note = entry.byUser[userKey];
+      firebasePath = `${caseId}/byUser/${userKey}`;
+    } else if (!entry.byUser && userKey === 'legacy') {
+      note = entry;
+      firebasePath = caseId;
+    }
+
+    if (!note) {
+      alert('Ответ сотрудника не найден. Обновите страницу и попробуйте ещё раз.');
+      return;
+    }
+
     const admin = window.firebase && window.firebase.auth && window.firebase.auth().currentUser;
-    note.reviewStatus = status;
-    note.reviewedAt = new Date().toISOString();
-    note.reviewedBy = admin && admin.email ? admin.email : 'Администратор';
+    const reviewPatch = {
+      reviewStatus: status,
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: admin && admin.email ? admin.email : 'Администратор'
+    };
+
+    Object.assign(note, reviewPatch);
     trainerReviewFilter = status === 'rejected' ? 'rejected' : 'reviewed';
-    saveNotes();
+
+    localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+    closeTrainerChatModal();
     renderStats();
     renderCaseList();
     renderTrainerNotes();
-    closeTrainerChatModal();
+
+    if (firebaseReady && firebaseNotesRef && firebasePath) {
+      firebaseNotesRef.child(firebasePath).update(reviewPatch).catch(err => {
+        console.warn('Firebase review status save error:', err);
+        alert('Статус изменился на экране, но Firebase не дал сохранить решение. Проверьте правила Realtime Database для okkReview/notes.');
+      });
+    } else {
+      saveNotes();
+    }
   }
 
   function closeTrainerChatModal() {
