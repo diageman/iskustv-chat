@@ -70,16 +70,6 @@
             <button type="button" data-case-filter="unchecked">Не проверенные <span id="uncheckedMini">0</span></button>
           </div>
 
-          <section class="crm-section-card compact">
-            <div class="crm-section-title">
-              <div>
-                <p class="section-label">Критерии качества</p>
-                <h2>Что можно отметить</h2>
-              </div>
-            </div>
-            <div class="employee-list crm-employee-list" id="employeeGrid"></div>
-          </section>
-
           <section class="crm-section-card compact cases-card">
             <div id="activeEmployeeCard"></div>
             <div class="queue-head crm-queue-head">
@@ -236,6 +226,7 @@
             <div class="trainer-review-folders" id="trainerReviewFolders">
               <button class="trainer-folder-btn active" type="button" data-review-filter="pending">На проверку <span id="pendingReviewCount">0</span></button>
               <button class="trainer-folder-btn" type="button" data-review-filter="reviewed">Проверенные <span id="reviewedReviewCount">0</span></button>
+              <button class="trainer-folder-btn" type="button" data-review-filter="rejected">Отклоненные <span id="rejectedReviewCount">0</span></button>
             </div>
             <div class="trainer-notes-list" id="trainerNotesList"></div>
             <p class="admin-footnote">Откройте ответ сотрудника и отметьте решение: «Принято» или «Отклонено».</p>

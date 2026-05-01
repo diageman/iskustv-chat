@@ -684,6 +684,7 @@
 
   function renderEmployeeGrid() {
     const grid = $('employeeGrid');
+    if (!grid) return;
     const query = String(employeeSearchQuery || '').trim().toLowerCase();
     const criteria = getQualityCriteria().filter(c => !query || [c.title, c.description, c.type, c.score].join(' ').toLowerCase().includes(query));
     grid.innerHTML = criteria.map(c => `
@@ -852,11 +853,13 @@
     if (!host) return;
     const allItems = getAllTrainerNoteItems();
     const pendingItems = allItems.filter(item => getNoteReviewStatus(item.note) === 'pending');
-    const reviewedItems = allItems.filter(item => getNoteReviewStatus(item.note) !== 'pending');
-    const items = trainerReviewFilter === 'reviewed' ? reviewedItems : pendingItems;
+    const reviewedItems = allItems.filter(item => getNoteReviewStatus(item.note) === 'accepted');
+    const rejectedItems = allItems.filter(item => getNoteReviewStatus(item.note) === 'rejected');
+    const items = trainerReviewFilter === 'rejected' ? rejectedItems : (trainerReviewFilter === 'reviewed' ? reviewedItems : pendingItems);
 
     if ($('pendingReviewCount')) $('pendingReviewCount').textContent = String(pendingItems.length);
     if ($('reviewedReviewCount')) $('reviewedReviewCount').textContent = String(reviewedItems.length);
+    if ($('rejectedReviewCount')) $('rejectedReviewCount').textContent = String(rejectedItems.length);
     const folders = $('trainerReviewFolders');
     if (folders) {
       folders.querySelectorAll('[data-review-filter]').forEach(btn => {
@@ -865,9 +868,11 @@
     }
 
     if (!items.length) {
-      host.innerHTML = trainerReviewFilter === 'reviewed'
-        ? '<div class="trainer-note-empty">Проверенных ответов пока нет.</div>'
-        : '<div class="trainer-note-empty">Пока нет ответов на проверку.</div>';
+      host.innerHTML = trainerReviewFilter === 'rejected'
+        ? '<div class="trainer-note-empty">Отклоненных ответов пока нет.</div>'
+        : trainerReviewFilter === 'reviewed'
+          ? '<div class="trainer-note-empty">Принятых ответов пока нет.</div>'
+          : '<div class="trainer-note-empty">Пока нет ответов на проверку.</div>';
       return;
     }
 
