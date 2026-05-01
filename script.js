@@ -142,8 +142,11 @@
   function emptyState() {
     return {
       employees: [],
+      cases: [],
+      categories: ['Без категории'],
       api: demoState().api,
       trash: { employees: [] },
+      activeCategory: 'all',
       activeEmployeeId: null,
       activeCaseId: null
     };
@@ -154,28 +157,52 @@
   let notes = USE_FIREBASE_SOURCE ? {} : loadNotes();
   let caseFilter = 'all';
   let employeeSearchQuery = '';
+  let trainerReviewFilter = 'pending';
 
   function normalizeStateData(data) {
     const fallback = demoState();
-    if (!data || !Array.isArray(data.employees)) return fallback;
+    if (!data || typeof data !== 'object') data = fallback;
+
+    if (!Array.isArray(data.employees)) data.employees = [];
     data.employees = data.employees.filter(Boolean).map(emp => {
       emp.cases = Array.isArray(emp.cases) ? emp.cases.filter(Boolean) : [];
       return emp;
     });
+
+    let cases = Array.isArray(data.cases) ? data.cases.filter(Boolean) : [];
+    if (!cases.length && data.employees.length) {
+      data.employees.forEach(emp => {
+        (emp.cases || []).forEach(c => {
+          cases.push(Object.assign({}, c, {
+            category: c.category || emp.name || 'Без категории',
+            oldEmployeeId: emp.id || ''
+          }));
+        });
+      });
+    }
+
+    data.cases = cases.map(c => {
+      c.id = c.id || ('case_' + Math.random().toString(36).slice(2));
+      c.title = c.title || (c.driver ? 'Чат с ' + c.driver : 'Готовый чат');
+      c.category = c.category || 'Без категории';
+      c.driver = c.driver || '';
+      c.status = c.status || 'На проверке';
+      c.info = c.info || '';
+      c.transcript = c.transcript || '';
+      c.hidden = c.hidden || '';
+      return c;
+    });
+
+    const categorySet = new Set((Array.isArray(data.categories) ? data.categories : []).map(x => String(x || '').trim()).filter(Boolean));
+    data.cases.forEach(c => { if (c.category) categorySet.add(c.category); });
+    data.categories = Array.from(categorySet);
+    if (!data.categories.length) data.categories = ['Без категории'];
+
     if (!data.api) data.api = fallback.api;
     if (!data.trash || !Array.isArray(data.trash.employees)) data.trash = { employees: [] };
-    data.trash.employees = data.trash.employees.filter(Boolean).map(emp => {
-      emp.cases = Array.isArray(emp.cases) ? emp.cases.filter(Boolean) : [];
-      return emp;
-    });
-    if (!data.activeEmployeeId && data.employees[0]) data.activeEmployeeId = data.employees[0].id;
-    const activeEmp = data.employees.find(e => e.id === data.activeEmployeeId) || data.employees[0] || null;
-    if (!activeEmp) {
-      data.activeEmployeeId = null;
-      data.activeCaseId = null;
-    } else if (!activeEmp.cases.some(c => c.id === data.activeCaseId)) {
-      data.activeEmployeeId = activeEmp.id;
-      data.activeCaseId = activeEmp.cases[0] ? activeEmp.cases[0].id : null;
+    if (!data.activeCategory) data.activeCategory = 'all';
+    if (!data.activeCaseId || !data.cases.some(c => c.id === data.activeCaseId)) {
+      data.activeCaseId = data.cases[0] ? data.cases[0].id : null;
     }
     return data;
   }
@@ -289,6 +316,25 @@
     return note.author || [note.firstName, note.lastName].filter(Boolean).join(' ') || note.email || 'Сотрудник';
   }
 
+  function getNoteReviewStatus(note) {
+    if (!note || typeof note === 'string') return 'pending';
+    return note.reviewStatus || 'pending';
+  }
+
+  function getNoteReviewLabel(note) {
+    const status = getNoteReviewStatus(note);
+    if (status === 'accepted') return 'Принято';
+    if (status === 'rejected') return 'Отклонено';
+    return 'На проверку';
+  }
+
+  function getNoteReviewClass(note) {
+    const status = getNoteReviewStatus(note);
+    if (status === 'accepted') return 'accepted';
+    if (status === 'rejected') return 'rejected';
+    return 'pending';
+  }
+
   function getCaseNoteCount(caseId) {
     const entry = notes[caseId];
     if (!entry) return 0;
@@ -324,17 +370,27 @@
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
   function getEmployee(id) { return state.employees.find(e => e.id === id) || null; }
-  function getActiveEmployee() {
-    let emp = getEmployee(state.activeEmployeeId);
-    if (!emp) { emp = state.employees[0] || null; state.activeEmployeeId = emp ? emp.id : null; }
-    return emp;
+  function getCategories() {
+    return Array.isArray(state.categories) && state.categories.length ? state.categories : ['Без категории'];
   }
+  function getAllCases() {
+    return Array.isArray(state.cases) ? state.cases : [];
+  }
+  function getActiveEmployee() { return null; }
   function getActiveCase() {
-    const emp = getActiveEmployee();
-    if (!emp || !emp.cases.length) return null;
-    let c = emp.cases.find(x => x.id === state.activeCaseId);
-    if (!c) { c = emp.cases[0]; state.activeCaseId = c.id; }
+    const cases = getAllCases();
+    let c = cases.find(x => x.id === state.activeCaseId);
+    if (!c) { c = cases[0] || null; state.activeCaseId = c ? c.id : null; }
     return c;
+  }
+  function getVisibleCases() {
+    const allCases = getAllCases();
+    const byCategory = state.activeCategory && state.activeCategory !== 'all'
+      ? allCases.filter(c => (c.category || 'Без категории') === state.activeCategory)
+      : allCases;
+    const checkedCases = byCategory.filter(c => getCaseNoteCount(c.id) > 0);
+    const uncheckedCases = byCategory.filter(c => getCaseNoteCount(c.id) === 0);
+    return caseFilter === 'checked' ? checkedCases : (caseFilter === 'unchecked' ? uncheckedCases : byCategory);
   }
 
   // Парсер текста чата: поддерживаются реплики "Водитель:", "Сотрудник:" и системные блоки "Система:".
@@ -440,18 +496,18 @@
     if (!ta) return;
     const value = ta.value;
     const start = ta.selectionStart || 0;
-    const end = ta.selectionEnd || 0;
     const now = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     const before = value.slice(0, start);
-    const after = value.slice(end);
+    const after = value.slice(start);
     const prefix = before && !before.endsWith('\n') ? '\n\n' : '';
-    const suffix = after && !after.startsWith('\n') ? '\n' : '';
+    const suffix = after && !after.startsWith('\n') ? '\n\n' : '';
     const insert = `${prefix}${label} ${now}: `;
     ta.value = before + insert + suffix + after;
     const pos = before.length + insert.length;
     ta.focus();
     ta.setSelectionRange(pos, pos);
     renderCaseEditorPreview();
+    renderTranscriptEditorHighlight();
   }
 
   function insertTranscriptSystemInfo() {
@@ -471,6 +527,7 @@
     ta.focus();
     ta.setSelectionRange(pos, pos);
     renderCaseEditorPreview();
+    renderTranscriptEditorHighlight();
   }
 
   function insertTranscriptDate() {
@@ -496,6 +553,7 @@
     ta.focus();
     ta.setSelectionRange(pos, pos);
     renderCaseEditorPreview();
+    renderTranscriptEditorHighlight();
   }
 
   function makeSelectedTextPrivate() {
@@ -525,6 +583,7 @@
     ta.focus();
     ta.setSelectionRange(pos, pos);
     renderCaseEditorPreview();
+    renderTranscriptEditorHighlight();
   }
 
   function renderTranscriptHtml(msgs, driverName) {
@@ -568,43 +627,38 @@
 
   // ---------- РЕНДЕР ----------
   function renderStats() {
-    const empCount = state.employees.length;
-    const caseCount = state.employees.reduce((n, e) => n + (Array.isArray(e.cases) ? e.cases.length : 0), 0);
+    const categoryCount = getCategories().length;
+    const caseCount = getAllCases().length;
     const notesCount = getAllTrainerNoteItems().length;
     $('stats').innerHTML = `
-      <div class="header-stat"><strong>${empCount}</strong><span>сотрудников</span></div>
+      <div class="header-stat"><strong>${categoryCount}</strong><span>категорий</span></div>
       <div class="header-stat"><strong>${caseCount}</strong><span>готовых чатов</span></div>
-      <div class="header-stat"><strong>${notesCount}</strong><span>заметок ОКК</span></div>`;
+      <div class="header-stat"><strong>${notesCount}</strong><span>ответов сотрудников</span></div>`;
   }
 
   function renderEmployeeGrid() {
     const grid = $('employeeGrid');
-    const query = String(employeeSearchQuery || '').trim().toLowerCase();
-    const employees = query
-      ? state.employees.filter(e => {
-          const haystack = [e.name, e.role, e.experience, e.about, e.hint]
-            .concat((e.cases || []).map(c => [c.driver, c.status, c.hidden, c.transcript].join(' ')))
-            .join(' ')
-            .toLowerCase();
-          return haystack.includes(query);
-        })
-      : state.employees;
+    const categories = ['all'].concat(getCategories());
+    grid.innerHTML = categories.map(cat => {
+      const title = cat === 'all' ? 'Все чаты' : cat;
+      const count = cat === 'all' ? getAllCases().length : getAllCases().filter(c => (c.category || 'Без категории') === cat).length;
+      const avatar = cat === 'all' ? '∞' : title.slice(0, 1).toUpperCase();
+      return `
+        <button type="button" class="employee-item${cat === state.activeCategory ? ' active' : ''}" data-category="${escapeHtml(cat)}">
+          <span class="emp-avatar">${escapeHtml(avatar)}</span>
+          <span class="emp-info">
+            <strong>${escapeHtml(title)}</strong>
+            <span class="emp-role">Категория чатов</span>
+          </span>
+          <span class="emp-count">${count}</span>
+        </button>`;
+    }).join('') || '<p class="muted">Категорий пока нет.</p>';
 
-    grid.innerHTML = employees.map(e => `
-      <button type="button" class="employee-item${e.id === state.activeEmployeeId ? ' active' : ''}" data-emp="${escapeHtml(e.id)}">
-        <span class="emp-avatar">${escapeHtml(e.avatar || e.name.slice(0,1))}</span>
-        <span class="emp-info">
-          <strong>${escapeHtml(e.name)}</strong>
-          <span class="emp-role">${escapeHtml(e.role || '')}</span>
-        </span>
-        <span class="emp-count">${Array.isArray(e.cases) ? e.cases.length : 0}</span>
-      </button>`).join('') || (query ? '<p class="muted">Сотрудники не найдены.</p>' : '<p class="muted">Сотрудников пока нет. Добавьте в админ-панели.</p>');
-
-    grid.querySelectorAll('[data-emp]').forEach(btn => {
+    grid.querySelectorAll('[data-category]').forEach(btn => {
       btn.addEventListener('click', () => {
-        state.activeEmployeeId = btn.getAttribute('data-emp');
-        const emp = getActiveEmployee();
-        state.activeCaseId = emp && emp.cases[0] ? emp.cases[0].id : null;
+        state.activeCategory = btn.getAttribute('data-category') || 'all';
+        const visible = getVisibleCases();
+        state.activeCaseId = visible[0] ? visible[0].id : null;
         saveState();
         renderAll();
       });
@@ -612,38 +666,35 @@
   }
 
   function renderActiveEmployeeCard() {
-    const emp = getActiveEmployee();
     const host = $('activeEmployeeCard');
-    if (!emp) { host.innerHTML = ''; return; }
+    const active = state.activeCategory && state.activeCategory !== 'all' ? state.activeCategory : 'Все чаты';
+    const count = getVisibleCases().length;
     host.innerHTML = `
       <div class="active-emp">
         <div class="active-emp-top">
-          <span class="emp-avatar big">${escapeHtml(emp.avatar || emp.name.slice(0,1))}</span>
+          <span class="emp-avatar big">${escapeHtml(active.slice(0,1).toUpperCase())}</span>
           <div>
-            <strong>${escapeHtml(emp.name)}</strong>
-            <div class="muted">${escapeHtml(emp.role || '')}</div>
-            <div class="muted">${escapeHtml(emp.experience || '')}</div>
+            <strong>${escapeHtml(active)}</strong>
+            <div class="muted">${count} чатов в списке</div>
           </div>
         </div>
-        ${emp.about ? `<p class="emp-about">${escapeHtml(emp.about)}</p>` : ''}
-        ${emp.hint ? `<p class="emp-hint">${escapeHtml(emp.hint)}</p>` : ''}
+        <p class="emp-hint">Сотрудники отвечают на общие чаты. Ответы сохраняются отдельно по каждому аккаунту.</p>
       </div>`;
   }
 
   function renderCaseList() {
-    const emp = getActiveEmployee();
     const list = $('caseList');
     const pill = $('queueCount');
     const tabs = $('caseFilterTabs');
-    if (!emp) { list.innerHTML = ''; pill.textContent = '0'; return; }
-
-    const allCases = emp.cases || [];
-    const checkedCases = allCases.filter(c => !!getNoteText(c.id).trim());
-    const uncheckedCases = allCases.filter(c => !getNoteText(c.id).trim());
-    const visibleCases = caseFilter === 'checked' ? checkedCases : (caseFilter === 'unchecked' ? uncheckedCases : allCases);
+    const baseCases = state.activeCategory && state.activeCategory !== 'all'
+      ? getAllCases().filter(c => (c.category || 'Без категории') === state.activeCategory)
+      : getAllCases();
+    const checkedCases = baseCases.filter(c => getCaseNoteCount(c.id) > 0);
+    const uncheckedCases = baseCases.filter(c => getCaseNoteCount(c.id) === 0);
+    const visibleCases = getVisibleCases();
 
     pill.textContent = String(visibleCases.length);
-    if ($('statsMini')) $('statsMini').textContent = String(allCases.length);
+    if ($('statsMini')) $('statsMini').textContent = String(baseCases.length);
     if ($('checkedMini')) $('checkedMini').textContent = String(checkedCases.length);
     if ($('uncheckedMini')) $('uncheckedMini').textContent = String(uncheckedCases.length);
     if (tabs) {
@@ -653,18 +704,18 @@
     }
 
     const emptyText = caseFilter === 'checked'
-      ? 'У сотрудника пока нет проверенных чатов.'
-      : (caseFilter === 'unchecked' ? 'У сотрудника пока нет непроверенных чатов.' : 'У сотрудника пока нет кейсов.');
+      ? 'В этой категории пока нет чатов с ответами.'
+      : (caseFilter === 'unchecked' ? 'В этой категории пока нет чатов без ответов.' : 'Чатов пока нет. Добавьте чат в админ-панели.');
 
     list.innerHTML = visibleCases.map(c => {
       const hasNote = getCaseNoteCount(c.id) > 0;
       return `
         <button type="button" class="case-item${c.id === state.activeCaseId ? ' active' : ''}" data-case="${escapeHtml(c.id)}">
-          <span class="case-title">${escapeHtml(c.driver ? 'Чат с ' + c.driver : 'Готовый чат')}</span>
-          <span class="case-sub">${escapeHtml(c.driver || '')}</span>
+          <span class="case-title">${escapeHtml(c.title || (c.driver ? 'Чат с ' + c.driver : 'Готовый чат'))}</span>
+          <span class="case-sub">${escapeHtml([c.category, c.driver].filter(Boolean).join(' · '))}</span>
           <span class="case-tags">
-            <span class="case-status">${hasNote ? 'Проверен' : escapeHtml(c.status || 'На проверке')}</span>
-            ${hasNote ? '<span class="case-note-dot" title="Есть комментарий сотрудника">●</span>' : ''}
+            <span class="case-status">${hasNote ? 'Есть ответы' : escapeHtml(c.status || 'На проверке')}</span>
+            ${hasNote ? '<span class="case-note-dot" title="Есть ответы сотрудников">●</span>' : ''}
           </span>
         </button>`;
     }).join('') || `<p class="muted">${emptyText}</p>`;
@@ -681,7 +732,6 @@
   }
 
   function renderChat() {
-    const emp = getActiveEmployee();
     const c = getActiveCase();
     const title = $('caseTitle');
     const meta = $('caseMeta');
@@ -690,23 +740,19 @@
     const contactAvatar = $('contactAvatar');
     const infoPanel = $('caseInfoPanel');
 
-    if (!emp) {
-      title.textContent = 'Выберите сотрудника';
-      meta.textContent = 'После выбора появятся готовые чаты для проверки.';
-      thread.innerHTML = '';
-      setCaseInfoPanel(infoPanel, '');
-      return;
-    }
     if (!c) {
-      title.textContent = emp.name;
-      meta.textContent = 'У сотрудника пока нет кейсов. Добавьте в админ-панели.';
+      title.textContent = 'Выберите чат';
+      meta.textContent = 'Добавьте чат в админ-панели или выберите готовый из списка.';
+      contactName.textContent = 'Водитель';
+      contactAvatar.textContent = 'В';
       thread.innerHTML = '';
       setCaseInfoPanel(infoPanel, '');
       return;
     }
 
-    title.textContent = c.driver ? 'Чат с ' + c.driver : 'Готовый чат';
+    title.textContent = c.title || (c.driver ? 'Чат с ' + c.driver : 'Готовый чат');
     const metaParts = [];
+    if (c.category) metaParts.push(c.category);
     if (c.driver) metaParts.push('Водитель: ' + c.driver);
     if (c.status) metaParts.push(c.status);
     meta.textContent = metaParts.join(' · ') || 'Готовый чат';
@@ -718,7 +764,7 @@
     if (String(c.info || '').trim()) msgs.push({ who: 'system', text: String(c.info).trim(), time: '' });
     msgs.push(...parseTranscript(c.transcript));
     if (!msgs.length) {
-      thread.innerHTML = '<p class="muted">В этом кейсе пока нет реплик водителя или сотрудника.</p>';
+      thread.innerHTML = '<p class="muted">В этом чате пока нет реплик водителя или сотрудника.</p>';
       return;
     }
     thread.innerHTML = renderTranscriptHtml(msgs, c.driver || 'Водитель');
@@ -736,20 +782,7 @@
 
   // ---------- АДМИН ----------
   function renderAdmin() {
-    // селектор сотрудника
-    const empSel = $('employeeSelect');
-    empSel.innerHTML = state.employees.map(e =>
-      `<option value="${escapeHtml(e.id)}"${e.id === state.activeEmployeeId ? ' selected' : ''}>${escapeHtml(e.name)}</option>`
-    ).join('') + '<option value="__new">+ Новый сотрудник</option>';
-
-    const activeEmpForForm = state.activeEmployeeId && getEmployee(state.activeEmployeeId) ? state.activeEmployeeId : (state.employees[0] && state.employees[0].id);
-    fillEmployeeForm(activeEmpForForm);
-
-    // селекторы кейса
-    const caseEmpSel = $('caseEmployeeSelect');
-    caseEmpSel.innerHTML = state.employees.map(e =>
-      `<option value="${escapeHtml(e.id)}"${e.id === state.activeEmployeeId ? ' selected' : ''}>${escapeHtml(e.name)}</option>`
-    ).join('');
+    renderCategorySelects();
     renderCaseSelect();
     fillCaseForm();
 
@@ -764,37 +797,50 @@
     renderTrainerNotes();
     renderTrash();
     const trainerNotesCount = getAllTrainerNoteItems().length;
-    $('adminStatus').textContent = `Сотрудников: ${state.employees.length}. Кейсов всего: ${state.employees.reduce((n,e)=>n+(Array.isArray(e.cases)?e.cases.length:0),0)}. Заметок тренеру: ${trainerNotesCount}. В корзине: ${(state.trash && state.trash.employees ? state.trash.employees.length : 0)}.`;
+    $('adminStatus').textContent = `Категорий: ${getCategories().length}. Чатов всего: ${getAllCases().length}. Ответов сотрудников: ${trainerNotesCount}. В корзине: ${(state.trash && state.trash.employees ? state.trash.employees.length : 0)}.`;
   }
 
   function findCaseOwner(caseId) {
-    for (const emp of state.employees) {
-      const found = emp.cases.find(c => c.id === caseId);
-      if (found) return { employee: emp, caseItem: found };
-    }
-    return null;
+    const found = getAllCases().find(c => c.id === caseId);
+    if (!found) return null;
+    return { employee: { name: found.category || 'Общие чаты' }, caseItem: found };
   }
 
   function renderTrainerNotes() {
     const host = $('trainerNotesList');
     if (!host) return;
-    const items = getAllTrainerNoteItems();
+    const allItems = getAllTrainerNoteItems();
+    const pendingItems = allItems.filter(item => getNoteReviewStatus(item.note) === 'pending');
+    const reviewedItems = allItems.filter(item => getNoteReviewStatus(item.note) !== 'pending');
+    const items = trainerReviewFilter === 'reviewed' ? reviewedItems : pendingItems;
+
+    if ($('pendingReviewCount')) $('pendingReviewCount').textContent = String(pendingItems.length);
+    if ($('reviewedReviewCount')) $('reviewedReviewCount').textContent = String(reviewedItems.length);
+    const folders = $('trainerReviewFolders');
+    if (folders) {
+      folders.querySelectorAll('[data-review-filter]').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-review-filter') === trainerReviewFilter);
+      });
+    }
 
     if (!items.length) {
-      host.innerHTML = '<div class="trainer-note-empty">Пока нет ответов от сотрудников.</div>';
+      host.innerHTML = trainerReviewFilter === 'reviewed'
+        ? '<div class="trainer-note-empty">Проверенных ответов пока нет.</div>'
+        : '<div class="trainer-note-empty">Пока нет ответов на проверку.</div>';
       return;
     }
 
     host.innerHTML = items.map(item => {
       const when = item.note && item.note.submittedAt ? new Date(item.note.submittedAt).toLocaleString('ru-RU') : '';
       const email = item.note && item.note.email ? ' · ' + item.note.email : '';
+      const reviewed = item.note && item.note.reviewedAt ? ' · проверено ' + new Date(item.note.reviewedAt).toLocaleString('ru-RU') : '';
       return `
         <button class="trainer-note-item" type="button" data-open-note="${escapeHtml(item.caseId)}" data-open-note-user="${escapeHtml(item.userKey)}">
           <div class="trainer-note-top">
-            <strong>${escapeHtml(item.caseItem.driver ? 'Чат с ' + item.caseItem.driver : 'Готовый чат')}</strong>
-            <span>${escapeHtml(item.caseItem.status || 'На проверке')}</span>
+            <strong>${escapeHtml(item.caseItem.title || (item.caseItem.driver ? 'Чат с ' + item.caseItem.driver : 'Готовый чат'))}</strong>
+            <span class="review-status ${getNoteReviewClass(item.note)}">${getNoteReviewLabel(item.note)}</span>
           </div>
-          <div class="trainer-note-meta">Ответил: ${escapeHtml(getNoteAuthor(item.note))}${escapeHtml(email)}${when ? ' · ' + escapeHtml(when) : ''}</div>
+          <div class="trainer-note-meta">Ответил: ${escapeHtml(getNoteAuthor(item.note))}${escapeHtml(email)}${when ? ' · ' + escapeHtml(when) : ''}${escapeHtml(reviewed)}</div>
           <div class="trainer-note-text">${escapeHtml(item.text)}</div>
         </button>`;
     }).join('');
@@ -822,8 +868,14 @@
     const noteWhen = note && typeof note !== 'string' && note.submittedAt ? new Date(note.submittedAt).toLocaleString('ru-RU') : '';
     title.textContent = c.driver ? 'Чат с ' + c.driver : 'Готовый чат';
     meta.textContent = `${owner.employee.name || 'Сотрудник'} · ${c.status || 'На проверке'}`;
-    noteMeta.textContent = `Ответил: ${getNoteAuthor(note)}${note && note.email ? ' · ' + note.email : ''}${noteWhen ? ' · ' + noteWhen : ''}`;
+    modal.dataset.caseId = caseId || '';
+    modal.dataset.userKey = userKey || '';
+    const reviewLabel = getNoteReviewLabel(note);
+    const reviewedBy = note && note.reviewedBy ? ' · проверил: ' + note.reviewedBy : '';
+    const reviewedAt = note && note.reviewedAt ? ' · ' + new Date(note.reviewedAt).toLocaleString('ru-RU') : '';
+    noteMeta.textContent = `Ответил: ${getNoteAuthor(note)}${note && note.email ? ' · ' + note.email : ''}${noteWhen ? ' · ' + noteWhen : ''} · статус: ${reviewLabel}${reviewedBy}${reviewedAt}`;
     noteText.textContent = note && note.text ? note.text : '';
+    updateTrainerReviewButtons(note);
     setCaseInfoPanel(info, '');
 
     const msgs = [];
@@ -837,6 +889,34 @@
 
     modal.classList.add('is-open');
     modal.setAttribute('aria-hidden', 'false');
+  }
+
+  function updateTrainerReviewButtons(note) {
+    const status = getNoteReviewStatus(note);
+    const acceptBtn = $('reviewAcceptBtn');
+    const rejectBtn = $('reviewRejectBtn');
+    if (acceptBtn) acceptBtn.classList.toggle('is-selected', status === 'accepted');
+    if (rejectBtn) rejectBtn.classList.toggle('is-selected', status === 'rejected');
+  }
+
+  function setTrainerNoteReview(status) {
+    const modal = $('trainerChatModal');
+    if (!modal) return;
+    const caseId = modal.dataset.caseId;
+    const userKey = modal.dataset.userKey;
+    if (!caseId || !userKey || !notes[caseId]) return;
+    const entry = notes[caseId];
+    let note = null;
+    if (entry.byUser && entry.byUser[userKey]) note = entry.byUser[userKey];
+    else if (!entry.byUser && userKey === 'legacy') note = entry;
+    if (!note) return;
+    const admin = window.firebase && window.firebase.auth && window.firebase.auth().currentUser;
+    note.reviewStatus = status;
+    note.reviewedAt = new Date().toISOString();
+    note.reviewedBy = admin && admin.email ? admin.email : 'Администратор';
+    saveNotes();
+    renderTrainerNotes();
+    openTrainerNote(caseId, userKey);
   }
 
   function closeTrainerChatModal() {
@@ -976,29 +1056,54 @@
     $('employeeForm').dataset.editing = empId || '__new';
   }
 
+  function renderCategorySelects() {
+    const cats = getCategories();
+    const adminSel = $('adminCategorySelect');
+    if (adminSel) {
+      adminSel.innerHTML = cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('') + '<option value="__new">+ Новая категория</option>';
+      adminSel.value = cats.includes(state.activeCategory) ? state.activeCategory : (cats[0] || '__new');
+      fillCategoryForm();
+    }
+    const caseCatSel = $('caseCategoryInput');
+    if (caseCatSel) {
+      caseCatSel.innerHTML = cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    }
+    const filterSel = $('caseCategorySelect');
+    if (filterSel) {
+      filterSel.innerHTML = '<option value="all">Все категории</option>' + cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+      filterSel.value = state.activeCategory || 'all';
+    }
+  }
+
+  function fillCategoryForm() {
+    const sel = $('adminCategorySelect');
+    const input = $('categoryNameInput');
+    if (!sel || !input) return;
+    input.value = sel.value === '__new' ? '' : sel.value;
+  }
+
   function renderCaseSelect() {
-    const empId = $('caseEmployeeSelect').value;
-    const emp = getEmployee(empId);
     const sel = $('caseSelect');
-    if (!emp) { sel.innerHTML = '<option value="__new">+ Новый кейс</option>'; return; }
-    sel.innerHTML = emp.cases.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.driver ? 'Чат с ' + c.driver : c.id)}</option>`).join('')
-      + '<option value="__new">+ Новый кейс</option>';
-    if (emp.cases.find(c => c.id === state.activeCaseId)) sel.value = state.activeCaseId;
+    if (!sel) return;
+    const cases = getAllCases();
+    sel.innerHTML = cases.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.title || c.driver || c.id)}</option>`).join('')
+      + '<option value="__new">+ Новый чат</option>';
+    if (cases.find(c => c.id === state.activeCaseId)) sel.value = state.activeCaseId;
+    else sel.value = '__new';
   }
 
   function fillCaseForm() {
-    const empId = $('caseEmployeeSelect').value;
-    const caseId = $('caseSelect').value;
-    const emp = getEmployee(empId);
-    const c = emp ? emp.cases.find(x => x.id === caseId) : null;
-    const src = c || { driver:'', status:'', info:'', transcript:'', hidden:'' };
+    const caseId = $('caseSelect') ? $('caseSelect').value : '__new';
+    const c = getAllCases().find(x => x.id === caseId);
+    const src = c || { title:'', driver:'', category: getCategories()[0] || 'Без категории', status:'', info:'', transcript:'', hidden:'' };
+    if ($('caseTitleInput')) $('caseTitleInput').value = src.title || '';
     $('caseDriverInput').value = src.driver || '';
+    if ($('caseCategoryInput')) $('caseCategoryInput').value = src.category || getCategories()[0] || 'Без категории';
     $('caseStatusInput').value = src.status || '';
     $('caseInfoInput').value = src.info || '';
     $('caseTranscriptInput').value = src.transcript || '';
     $('caseHiddenInput').value = src.hidden || '';
-    $('caseForm').dataset.editing = caseId || '__new';
-    $('caseForm').dataset.employee = empId || '';
+    $('caseForm').dataset.editing = c ? c.id : '__new';
     renderCaseEditorPreview();
     renderTranscriptEditorHighlight();
   }
@@ -1044,12 +1149,10 @@
     const createChatBtn = $('createChatBtn');
     if (createChatBtn) createChatBtn.addEventListener('click', () => {
       location.hash = '#admin';
-      const emp = getActiveEmployee();
-      if (emp && $('caseEmployeeSelect')) $('caseEmployeeSelect').value = emp.id;
       renderCaseSelect();
       if ($('caseSelect')) $('caseSelect').value = '__new';
       fillCaseForm();
-      setTimeout(() => $('caseDriverInput') && $('caseDriverInput').focus(), 120);
+      setTimeout(() => $('caseTitleInput') && $('caseTitleInput').focus(), 120);
     });
 
     const caseFilterTabs = $('caseFilterTabs');
@@ -1111,99 +1214,106 @@
     $('importInput').addEventListener('change', importJson);
     $('resetBtn').addEventListener('click', () => {
       if (!confirm('Сбросить данные к демо? Заметки ОКК тоже будут удалены.')) return;
-      state = demoState(); notes = {};
+      state = normalizeStateData(demoState()); notes = {};
       saveState(); saveNotes(); renderAll();
     });
 
-    // Форма сотрудника
-    if ($('deleteEmployeeBtn')) $('deleteEmployeeBtn').addEventListener('click', deleteActiveEmployee);
+    // Категории
     if ($('emptyTrashBtn')) $('emptyTrashBtn').addEventListener('click', emptyTrash);
     document.querySelectorAll('[data-trainer-chat-close]').forEach(btn => btn.addEventListener('click', closeTrainerChatModal));
     document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeTrainerChatModal(); });
-
-    $('employeeSelect').addEventListener('change', (ev) => {
-      const v = ev.target.value;
-      if (v === '__new') {
-        fillEmployeeForm(null);
-        $('employeeForm').dataset.editing = '__new';
-      } else {
-        state.activeEmployeeId = v;
-        const emp = getEmployee(v);
-        state.activeCaseId = emp && emp.cases[0] ? emp.cases[0].id : null;
-        saveState();
-        renderAll();
-      }
+    const reviewFolders = $('trainerReviewFolders');
+    if (reviewFolders) reviewFolders.querySelectorAll('[data-review-filter]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        trainerReviewFilter = btn.getAttribute('data-review-filter') || 'pending';
+        renderTrainerNotes();
+      });
     });
-    function saveEmployeeFromForm() {
-      const editing = $('employeeForm').dataset.editing;
-      const data = {
-        name: $('employeeName').value.trim() || 'Без имени',
-        avatar: $('employeeAvatar').value.trim(),
-        role: $('employeeRole').value.trim(),
-        experience: $('employeeExperience').value.trim(),
-        about: $('employeeAbout').value.trim(),
-        hint: $('employeeHint').value.trim()
-      };
-      if (editing && editing !== '__new' && getEmployee(editing)) {
-        Object.assign(getEmployee(editing), data);
-      } else {
-        const id = 'emp_' + Date.now().toString(36);
-        state.employees.push(Object.assign({ id, cases: [] }, data));
-        state.activeEmployeeId = id;
-        state.activeCaseId = null;
+    if ($('reviewAcceptBtn')) $('reviewAcceptBtn').addEventListener('click', () => setTrainerNoteReview('accepted'));
+    if ($('reviewRejectBtn')) $('reviewRejectBtn').addEventListener('click', () => setTrainerNoteReview('rejected'));
+
+    if ($('adminCategorySelect')) $('adminCategorySelect').addEventListener('change', fillCategoryForm);
+    function saveCategoryFromForm() {
+      const input = $('categoryNameInput');
+      const sel = $('adminCategorySelect');
+      if (!input || !sel) return;
+      const name = input.value.trim();
+      if (!name) { alert('Введите название категории.'); return; }
+      const oldName = sel.value !== '__new' ? sel.value : '';
+      if (oldName && oldName !== name) {
+        state.cases.forEach(c => { if (c.category === oldName) c.category = name; });
+        state.categories = getCategories().filter(c => c !== oldName);
       }
+      if (!state.categories.includes(name)) state.categories.push(name);
+      state.activeCategory = name;
       saveState();
       renderAll();
-      if ($('adminStatus')) $('adminStatus').textContent = 'Сотрудник сохранён.';
+      if ($('adminStatus')) $('adminStatus').textContent = 'Категория сохранена.';
     }
+    function deleteActiveCategory() {
+      const sel = $('adminCategorySelect');
+      if (!sel || sel.value === '__new') return;
+      const name = sel.value;
+      if (!confirm(`Удалить категорию "${name}"? Чаты останутся и перейдут в «Без категории».`)) return;
+      state.categories = getCategories().filter(c => c !== name);
+      state.cases.forEach(c => { if (c.category === name) c.category = 'Без категории'; });
+      if (!state.categories.includes('Без категории')) state.categories.unshift('Без категории');
+      state.activeCategory = 'all';
+      saveState();
+      renderAll();
+    }
+    if ($('saveCategoryBtn')) $('saveCategoryBtn').addEventListener('click', saveCategoryFromForm);
+    if ($('categoryForm')) $('categoryForm').addEventListener('submit', ev => { ev.preventDefault(); saveCategoryFromForm(); });
+    if ($('deleteCategoryBtn')) $('deleteCategoryBtn').addEventListener('click', deleteActiveCategory);
 
-    $('employeeForm').addEventListener('submit', (ev) => {
-      ev.preventDefault();
-      saveEmployeeFromForm();
+    // Форма чата
+    if ($('caseCategorySelect')) $('caseCategorySelect').addEventListener('change', () => {
+      state.activeCategory = $('caseCategorySelect').value || 'all';
+      renderCaseList();
     });
-    if ($('saveEmployeeBtn')) $('saveEmployeeBtn').addEventListener('click', saveEmployeeFromForm);
-
-    // Форма кейса
-    $('caseEmployeeSelect').addEventListener('change', () => { renderCaseSelect(); fillCaseForm(); });
     $('caseSelect').addEventListener('change', () => fillCaseForm());
     if ($('addDriverMsgBtn')) $('addDriverMsgBtn').addEventListener('click', () => insertTranscriptSpeaker('Водитель'));
     if ($('addAgentMsgBtn')) $('addAgentMsgBtn').addEventListener('click', () => insertTranscriptSpeaker('Сотрудник'));
     if ($('addDateMsgBtn')) $('addDateMsgBtn').addEventListener('click', insertTranscriptDate);
     if ($('addSystemMsgBtn')) $('addSystemMsgBtn').addEventListener('click', insertTranscriptSystemInfo);
     if ($('privateMessageBtn')) $('privateMessageBtn').addEventListener('click', makeSelectedTextPrivate);
-    ['caseDriverInput','caseInfoInput','caseTranscriptInput'].forEach(id => {
+    ['caseTitleInput','caseDriverInput','caseCategoryInput','caseInfoInput','caseTranscriptInput'].forEach(id => {
       const el = $(id);
       if (el) el.addEventListener('input', () => {
         renderCaseEditorPreview();
         renderTranscriptEditorHighlight();
       });
+      if (el && el.tagName === 'SELECT') el.addEventListener('change', renderCaseEditorPreview);
     });
     if ($('caseTranscriptInput')) {
       $('caseTranscriptInput').addEventListener('scroll', renderTranscriptEditorHighlight);
     }
     $('caseForm').addEventListener('submit', (ev) => {
       ev.preventDefault();
-      const empId = $('caseEmployeeSelect').value;
-      const emp = getEmployee(empId);
-      if (!emp) return;
       const editing = $('caseForm').dataset.editing;
+      const category = ($('caseCategoryInput') && $('caseCategoryInput').value) || 'Без категории';
+      if (!state.categories.includes(category)) state.categories.push(category);
       const data = {
+        title: ($('caseTitleInput') && $('caseTitleInput').value.trim()) || '',
         driver: $('caseDriverInput').value.trim(),
+        category,
         status: $('caseStatusInput').value.trim() || 'На проверке',
         info: $('caseInfoInput').value,
         transcript: $('caseTranscriptInput').value,
         hidden: $('caseHiddenInput').value
       };
+      data.title = data.title || (data.driver ? 'Чат с ' + data.driver : 'Готовый чат');
       if (editing && editing !== '__new') {
-        const c = emp.cases.find(x => x.id === editing);
+        const c = state.cases.find(x => x.id === editing);
         if (c) Object.assign(c, data);
       } else {
         const id = 'case_' + Date.now().toString(36);
-        emp.cases.push(Object.assign({ id }, data));
-        state.activeEmployeeId = emp.id;
+        state.cases.push(Object.assign({ id }, data));
         state.activeCaseId = id;
       }
+      state.activeCategory = category;
       saveState(); renderAll();
+      if ($('adminStatus')) $('adminStatus').textContent = 'Чат сохранён.';
     });
 
     // Форма API удалена из интерфейса.
@@ -1224,10 +1334,11 @@
   }
 
   function shiftCase(delta) {
-    const emp = getActiveEmployee(); if (!emp || !emp.cases.length) return;
-    const idx = emp.cases.findIndex(c => c.id === state.activeCaseId);
-    const next = (idx + delta + emp.cases.length) % emp.cases.length;
-    state.activeCaseId = emp.cases[next].id;
+    const cases = getVisibleCases();
+    if (!cases.length) return;
+    const idx = Math.max(0, cases.findIndex(c => c.id === state.activeCaseId));
+    const next = (idx + delta + cases.length) % cases.length;
+    state.activeCaseId = cases[next].id;
     saveState();
     renderChat(); renderCaseList(); renderNote();
   }

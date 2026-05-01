@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="admin-lock.css" />
   <link rel="stylesheet" href="admin-click-fix.css" />
   <link rel="stylesheet" href="access-requests.css" />
+  <link rel="stylesheet" href="review-folders.css" />
 </head>
 <body class="crm-body auth-locked">
   <div class="crm-app">
@@ -70,8 +71,8 @@
           <section class="crm-section-card compact">
             <div class="crm-section-title">
               <div>
-                <p class="section-label">Сотрудники</p>
-                <h2>Выбор сотрудника</h2>
+                <p class="section-label">Категории</p>
+                <h2>Фильтр чатов</h2>
               </div>
             </div>
             <div class="employee-list crm-employee-list" id="employeeGrid"></div>
@@ -81,8 +82,8 @@
             <div id="activeEmployeeCard"></div>
             <div class="queue-head crm-queue-head">
               <div>
-                <p class="section-label">Чаты сотрудника</p>
-                <h3>Очередь кейсов</h3>
+                <p class="section-label">Чаты</p>
+                <h3>Общий список заданий</h3>
               </div>
               <span class="queue-pill" id="queueCount"></span>
             </div>
@@ -96,8 +97,8 @@
             <div class="crm-contact-main">
               <div class="contact-avatar" id="contactAvatar">В</div>
               <div>
-                <div class="crm-contact-line"><h2 id="caseTitle">Выберите сотрудника</h2><span class="crm-client-badge">Кейс ОКК</span></div>
-                <p class="chat-meta" id="caseMeta">После выбора появятся готовые чаты для проверки.</p>
+                <div class="crm-contact-line"><h2 id="caseTitle">Выберите чат</h2><span class="crm-client-badge">Кейс ОКК</span></div>
+                <p class="chat-meta" id="caseMeta">После выбора появится диалог для проверки.</p>
               </div>
             </div>
             <div class="crm-dialog-actions">
@@ -142,8 +143,8 @@
         <div class="admin-head">
           <div>
             <p class="section-label">Админ-панель</p>
-            <h2>Редактирование сотрудников и готовых чатов</h2>
-            <p class="admin-description">Здесь можно менять сотрудников, кейсы, тексты диалогов и настройки будущего API.</p>
+            <h2>Редактирование чатов и категорий</h2>
+            <p class="admin-description">Здесь можно создавать общие чаты, добавлять категории и смотреть ответы сотрудников.</p>
           </div>
           <div class="toolbar">
             <button class="toolbar-btn" type="button" id="exportBtn">Экспорт JSON</button>
@@ -155,21 +156,16 @@
         </div>
 
         <div class="admin-grid">
-          <section class="admin-card">
+          <section class="admin-card category-editor-card">
             <div class="admin-card-head">
-              <div><p class="section-label">Сотрудники</p><h3>Редактор сотрудника</h3></div>
-              <select id="employeeSelect"></select>
+              <div><p class="section-label">Категории</p><h3>Редактор категорий</h3></div>
+              <select id="adminCategorySelect"></select>
             </div>
-            <form id="employeeForm" class="form-grid">
-              <label>Имя<input id="employeeName" type="text"></label>
-              <label>Аватар или инициалы<input id="employeeAvatar" type="text" maxlength="8" placeholder="А, АК, 👩"></label>
-              <label>Отдел / роль<input id="employeeRole" type="text"></label>
-              <label>Стаж / статус<input id="employeeExperience" type="text"></label>
-              <label class="full">Краткое описание<textarea id="employeeAbout" rows="3"></textarea></label>
-              <label class="full">Подпись для карточки<textarea id="employeeHint" rows="2"></textarea></label>
+            <form id="categoryForm" class="form-grid">
+              <label class="full">Название категории<input id="categoryNameInput" type="text" placeholder="Например: Выплаты, Грубость, ДТП"></label>
               <div class="full form-actions split-actions">
-                <button class="toolbar-btn danger" id="deleteEmployeeBtn" type="button">Удалить сотрудника</button>
-                <button class="save-btn" id="saveEmployeeBtn" type="button">Сохранить сотрудника</button>
+                <button class="toolbar-btn danger" id="deleteCategoryBtn" type="button">Удалить категорию</button>
+                <button class="save-btn" id="saveCategoryBtn" type="button">Сохранить категорию</button>
               </div>
             </form>
           </section>
@@ -177,10 +173,12 @@
           <section class="admin-card admin-case-editor-card">
             <div class="admin-card-head stacked admin-case-editor-head">
               <div><p class="section-label">Кейсы</p><h3>Удобный редактор чата</h3><p class="admin-footnote">Добавляйте реплики кнопками, вставляйте дату/инфо в любое место и сохраняйте готовый чат.</p></div>
-              <div class="dual-selects"><select id="caseEmployeeSelect"></select><select id="caseSelect"></select></div>
+              <div class="dual-selects"><select id="caseCategorySelect"></select><select id="caseSelect"></select></div>
             </div>
             <form id="caseForm" class="form-grid case-editor-form">
+              <label>Название чата<input id="caseTitleInput" type="text" placeholder="Например: Ошибка в выплате"></label>
               <label>Имя водителя<input id="caseDriverInput" type="text"></label>
+              <label>Категория<select id="caseCategoryInput"></select></label>
               <label>Статус<input id="caseStatusInput" type="text" placeholder="На проверке"></label>
               <label class="full">Системный блок в чате (необязательно)<textarea id="caseInfoInput" rows="7" placeholder="Сделка прикреплена к диалогу&#10;Дмитрий Васильченко - СВОИ (VK)&#10;15:17&#10;&#10;Контактная информация сохранена в контакт&#10;Дмитрий Васильченко&#10;Телефон&#10;+79115557153"></textarea></label>
               <label class="full case-transcript-label case-editor-main-field">
@@ -220,11 +218,15 @@
             <div class="admin-card-head">
               <div>
                 <p class="section-label">Проверка бизнес-тренера</p>
-                <h3>Заметки на чаты</h3>
+                <h3>Ответы сотрудников</h3>
               </div>
             </div>
+            <div class="trainer-review-folders" id="trainerReviewFolders">
+              <button class="trainer-folder-btn active" type="button" data-review-filter="pending">На проверку <span id="pendingReviewCount">0</span></button>
+              <button class="trainer-folder-btn" type="button" data-review-filter="reviewed">Проверенные <span id="reviewedReviewCount">0</span></button>
+            </div>
             <div class="trainer-notes-list" id="trainerNotesList"></div>
-            <p class="admin-footnote">Нажмите на заметку — откроется сам чат, а снизу будет текст сотрудника о найденной ошибке.</p>
+            <p class="admin-footnote">Откройте ответ сотрудника и отметьте решение: «Принято» или «Отклонено».</p>
           </section>
 
           <section class="admin-card trash-card">
@@ -271,9 +273,13 @@
         <div class="trainer-chat-info" id="trainerChatInfo" hidden></div>
         <div class="trainer-chat-thread" id="trainerChatThread"></div>
         <div class="trainer-chat-note">
-          <div class="trainer-chat-note-title">Заметка сотрудника</div>
+          <div class="trainer-chat-note-title">Ответ сотрудника</div>
           <div class="trainer-chat-note-meta" id="trainerChatNoteMeta"></div>
           <div class="trainer-chat-note-text" id="trainerChatNoteText"></div>
+          <div class="trainer-review-actions" id="trainerReviewActions">
+            <button class="save-btn review-accept-btn" type="button" id="reviewAcceptBtn">Принято</button>
+            <button class="toolbar-btn danger review-reject-btn" type="button" id="reviewRejectBtn">Отклонено</button>
+          </div>
         </div>
       </div>
     </section>
