@@ -12,6 +12,8 @@
   <link rel="stylesheet" href="admin-click-fix.css" />
   <link rel="stylesheet" href="access-requests.css" />
   <link rel="stylesheet" href="review-folders.css" />
+  <link rel="stylesheet" href="quality-criteria.css" />
+  <link rel="stylesheet" href="chat-scroll-buttons.css" />
 </head>
 <body class="crm-body auth-locked">
   <div class="crm-app">
@@ -59,7 +61,7 @@
         <aside class="crm-chat-list-panel" id="crmChatListPanel">
           <div class="crm-list-search">
             <span>⌕</span>
-            <input id="employeeSearchInput" type="search" placeholder="Поиск по сотрудникам" />
+            <input id="employeeSearchInput" type="search" placeholder="Поиск по чатам" />
           </div>
 
           <div class="crm-filter-tabs" id="caseFilterTabs">
@@ -71,8 +73,8 @@
           <section class="crm-section-card compact">
             <div class="crm-section-title">
               <div>
-                <p class="section-label">Категории</p>
-                <h2>Фильтр чатов</h2>
+                <p class="section-label">Критерии качества</p>
+                <h2>Что можно отметить</h2>
               </div>
             </div>
             <div class="employee-list crm-employee-list" id="employeeGrid"></div>
@@ -123,16 +125,24 @@
               </div>
             </div>
 
-            <div class="chat-canvas crm-chat-canvas">
+            <div class="chat-canvas crm-chat-canvas" id="chatCanvas">
               <div class="case-info-panel" id="caseInfoPanel" hidden></div>
               <div class="chat-thread" id="transcriptMessages"></div>
             </div>
 
+            <div class="chat-scroll-jump" id="chatScrollJump" hidden>
+              <button class="chat-scroll-btn" type="button" id="chatScrollTopBtn" title="К началу чата">↑ Наверх</button>
+              <button class="chat-scroll-btn" type="button" id="chatScrollBottomBtn" title="К концу чата">↓ Вниз</button>
+            </div>
+
             <div class="crm-message-box">
-              <textarea id="operatorNote" rows="3" placeholder="Напишите заметку по проверке кейса..."></textarea>
+              <label class="quality-answer-label">Критерий качества
+                <select id="qualityCriterionSelect"></select>
+              </label>
+              <textarea id="operatorNote" rows="3" placeholder="Объясните, какую ошибку вы нашли в чате..."></textarea>
               <div class="crm-message-actions">
-                <span id="noteStatus">Заметки сохраняются локально в браузере.</span>
-                <button class="save-btn" type="button" id="saveNoteBtn">Сохранить заметку</button>
+                <span id="noteStatus">Выберите критерий и объясните ошибку.</span>
+                <button class="save-btn" type="button" id="saveNoteBtn">Отправить на проверку</button>
               </div>
             </div>
           </section>
@@ -143,8 +153,8 @@
         <div class="admin-head">
           <div>
             <p class="section-label">Админ-панель</p>
-            <h2>Редактирование чатов и категорий</h2>
-            <p class="admin-description">Здесь можно создавать общие чаты, добавлять категории и смотреть ответы сотрудников.</p>
+            <h2>Редактирование чатов и критериев качества</h2>
+            <p class="admin-description">Здесь можно создавать чаты, настраивать критерии ошибок и проверять ответы сотрудников.</p>
           </div>
           <div class="toolbar">
             <button class="toolbar-btn" type="button" id="exportBtn">Экспорт JSON</button>
@@ -156,16 +166,19 @@
         </div>
 
         <div class="admin-grid">
-          <section class="admin-card category-editor-card">
+          <section class="admin-card quality-criteria-card">
             <div class="admin-card-head">
-              <div><p class="section-label">Категории</p><h3>Редактор категорий</h3></div>
-              <select id="adminCategorySelect"></select>
+              <div><p class="section-label">Критерии качества</p><h3>Редактор критериев</h3></div>
+              <select id="adminCriterionSelect"></select>
             </div>
-            <form id="categoryForm" class="form-grid">
-              <label class="full">Название категории<input id="categoryNameInput" type="text" placeholder="Например: Выплаты, Грубость, ДТП"></label>
+            <form id="criterionForm" class="form-grid">
+              <label>Название критерия<input id="criterionTitleInput" type="text" placeholder="Например: Слабая компетенция"></label>
+              <label>Тип<select id="criterionTypeInput"><option value="negative">Негативный</option><option value="positive">Позитивный</option></select></label>
+              <label>Вес / балл<input id="criterionScoreInput" type="text" placeholder="Например: 100% или -2"></label>
+              <label class="full">Описание критерия<textarea id="criterionDescriptionInput" rows="3" placeholder="Что именно сотрудник должен заметить в чате"></textarea></label>
               <div class="full form-actions split-actions">
-                <button class="toolbar-btn danger" id="deleteCategoryBtn" type="button">Удалить категорию</button>
-                <button class="save-btn" id="saveCategoryBtn" type="button">Сохранить категорию</button>
+                <button class="toolbar-btn danger" id="deleteCriterionBtn" type="button">Удалить критерий</button>
+                <button class="save-btn" id="saveCriterionBtn" type="button">Сохранить критерий</button>
               </div>
             </form>
           </section>
@@ -173,12 +186,11 @@
           <section class="admin-card admin-case-editor-card">
             <div class="admin-card-head stacked admin-case-editor-head">
               <div><p class="section-label">Кейсы</p><h3>Удобный редактор чата</h3><p class="admin-footnote">Добавляйте реплики кнопками, вставляйте дату/инфо в любое место и сохраняйте готовый чат.</p></div>
-              <div class="dual-selects"><select id="caseCategorySelect"></select><select id="caseSelect"></select></div>
+              <div class="dual-selects"><select id="caseSelect"></select></div>
             </div>
             <form id="caseForm" class="form-grid case-editor-form">
               <label>Название чата<input id="caseTitleInput" type="text" placeholder="Например: Ошибка в выплате"></label>
               <label>Имя водителя<input id="caseDriverInput" type="text"></label>
-              <label>Категория<select id="caseCategoryInput"></select></label>
               <label>Статус<input id="caseStatusInput" type="text" placeholder="На проверке"></label>
               <label class="full">Системный блок в чате (необязательно)<textarea id="caseInfoInput" rows="7" placeholder="Сделка прикреплена к диалогу&#10;Дмитрий Васильченко - СВОИ (VK)&#10;15:17&#10;&#10;Контактная информация сохранена в контакт&#10;Дмитрий Васильченко&#10;Телефон&#10;+79115557153"></textarea></label>
               <label class="full case-transcript-label case-editor-main-field">

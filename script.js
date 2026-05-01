@@ -139,14 +139,22 @@
   }
 
   // ---------- СОСТОЯНИЕ ----------
+  function defaultQualityCriteria() {
+    return [
+      { id: 'crit_competence', title: 'Слабая компетенция в решении вопроса', type: 'negative', score: '100%', description: 'Сотрудник должен отметить, что оператор не решил вопрос, дал неверный или неполный ответ.' },
+      { id: 'crit_personalization', title: 'Недостаточная персонализация', type: 'negative', score: '70%', description: 'Оператор отвечает шаблонно и не уточняет детали ситуации водителя.' },
+      { id: 'crit_objections', title: 'Неумение работать с возражениями', type: 'negative', score: '100%', description: 'Оператор не отрабатывает сомнения, негатив или прямое возражение водителя.' },
+      { id: 'crit_greeting', title: 'Некорректное приветствие', type: 'negative', score: '100%', description: 'Нет нормального приветствия, названия таксопарка или корректного тона.' }
+    ];
+  }
+
   function emptyState() {
     return {
       employees: [],
       cases: [],
-      categories: ['Без категории'],
+      criteria: defaultQualityCriteria(),
       api: demoState().api,
       trash: { employees: [] },
-      activeCategory: 'all',
       activeEmployeeId: null,
       activeCaseId: null
     };
@@ -193,14 +201,18 @@
       return c;
     });
 
-    const categorySet = new Set((Array.isArray(data.categories) ? data.categories : []).map(x => String(x || '').trim()).filter(Boolean));
-    data.cases.forEach(c => { if (c.category) categorySet.add(c.category); });
-    data.categories = Array.from(categorySet);
-    if (!data.categories.length) data.categories = ['Без категории'];
+    data.criteria = Array.isArray(data.criteria) && data.criteria.length
+      ? data.criteria.filter(Boolean).map((item, idx) => ({
+          id: item.id || ('crit_' + Date.now().toString(36) + '_' + idx),
+          title: item.title || item.name || 'Критерий качества',
+          type: item.type || 'negative',
+          score: item.score || '',
+          description: item.description || item.expectation || ''
+        }))
+      : defaultQualityCriteria();
 
     if (!data.api) data.api = fallback.api;
     if (!data.trash || !Array.isArray(data.trash.employees)) data.trash = { employees: [] };
-    if (!data.activeCategory) data.activeCategory = 'all';
     if (!data.activeCaseId || !data.cases.some(c => c.id === data.activeCaseId)) {
       data.activeCaseId = data.cases[0] ? data.cases[0].id : null;
     }
@@ -370,8 +382,12 @@
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
   function getEmployee(id) { return state.employees.find(e => e.id === id) || null; }
-  function getCategories() {
-    return Array.isArray(state.categories) && state.categories.length ? state.categories : ['Без категории'];
+  function getQualityCriteria() {
+    if (!Array.isArray(state.criteria) || !state.criteria.length) state.criteria = defaultQualityCriteria();
+    return state.criteria;
+  }
+  function getCriterion(id) {
+    return getQualityCriteria().find(c => c.id === id) || null;
   }
   function getAllCases() {
     return Array.isArray(state.cases) ? state.cases : [];
@@ -385,12 +401,9 @@
   }
   function getVisibleCases() {
     const allCases = getAllCases();
-    const byCategory = state.activeCategory && state.activeCategory !== 'all'
-      ? allCases.filter(c => (c.category || 'Без категории') === state.activeCategory)
-      : allCases;
-    const checkedCases = byCategory.filter(c => getCaseNoteCount(c.id) > 0);
-    const uncheckedCases = byCategory.filter(c => getCaseNoteCount(c.id) === 0);
-    return caseFilter === 'checked' ? checkedCases : (caseFilter === 'unchecked' ? uncheckedCases : byCategory);
+    const checkedCases = allCases.filter(c => getCaseNoteCount(c.id) > 0);
+    const uncheckedCases = allCases.filter(c => getCaseNoteCount(c.id) === 0);
+    return caseFilter === 'checked' ? checkedCases : (caseFilter === 'unchecked' ? uncheckedCases : allCases);
   }
 
   // Парсер текста чата: поддерживаются реплики "Водитель:", "Сотрудник:" и системные блоки "Система:".
@@ -625,60 +638,77 @@
     }).join('');
   }
 
+  function getChatCanvas() {
+    return $('chatCanvas') || document.querySelector('.crm-chat-canvas');
+  }
+
+  function updateChatScrollButtons() {
+    const canvas = getChatCanvas();
+    const host = $('chatScrollJump');
+    const topBtn = $('chatScrollTopBtn');
+    const bottomBtn = $('chatScrollBottomBtn');
+    if (!canvas || !host || !topBtn || !bottomBtn) return;
+    const canScroll = canvas.scrollHeight > canvas.clientHeight + 12;
+    host.hidden = !canScroll;
+    if (!canScroll) return;
+    const atTop = canvas.scrollTop <= 24;
+    const atBottom = canvas.scrollTop + canvas.clientHeight >= canvas.scrollHeight - 24;
+    topBtn.disabled = atTop;
+    bottomBtn.disabled = atBottom;
+  }
+
+  function scrollChatToTop() {
+    const canvas = getChatCanvas();
+    if (!canvas) return;
+    canvas.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(updateChatScrollButtons, 250);
+  }
+
+  function scrollChatToBottom() {
+    const canvas = getChatCanvas();
+    if (!canvas) return;
+    canvas.scrollTo({ top: canvas.scrollHeight, behavior: 'smooth' });
+    setTimeout(updateChatScrollButtons, 250);
+  }
+
   // ---------- РЕНДЕР ----------
   function renderStats() {
-    const categoryCount = getCategories().length;
+    const criteriaCount = getQualityCriteria().length;
     const caseCount = getAllCases().length;
     const notesCount = getAllTrainerNoteItems().length;
     $('stats').innerHTML = `
-      <div class="header-stat"><strong>${categoryCount}</strong><span>категорий</span></div>
+      <div class="header-stat"><strong>${criteriaCount}</strong><span>критериев</span></div>
       <div class="header-stat"><strong>${caseCount}</strong><span>готовых чатов</span></div>
       <div class="header-stat"><strong>${notesCount}</strong><span>ответов сотрудников</span></div>`;
   }
 
   function renderEmployeeGrid() {
     const grid = $('employeeGrid');
-    const categories = ['all'].concat(getCategories());
-    grid.innerHTML = categories.map(cat => {
-      const title = cat === 'all' ? 'Все чаты' : cat;
-      const count = cat === 'all' ? getAllCases().length : getAllCases().filter(c => (c.category || 'Без категории') === cat).length;
-      const avatar = cat === 'all' ? '∞' : title.slice(0, 1).toUpperCase();
-      return `
-        <button type="button" class="employee-item${cat === state.activeCategory ? ' active' : ''}" data-category="${escapeHtml(cat)}">
-          <span class="emp-avatar">${escapeHtml(avatar)}</span>
-          <span class="emp-info">
-            <strong>${escapeHtml(title)}</strong>
-            <span class="emp-role">Категория чатов</span>
-          </span>
-          <span class="emp-count">${count}</span>
-        </button>`;
-    }).join('') || '<p class="muted">Категорий пока нет.</p>';
-
-    grid.querySelectorAll('[data-category]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.activeCategory = btn.getAttribute('data-category') || 'all';
-        const visible = getVisibleCases();
-        state.activeCaseId = visible[0] ? visible[0].id : null;
-        saveState();
-        renderAll();
-      });
-    });
+    const query = String(employeeSearchQuery || '').trim().toLowerCase();
+    const criteria = getQualityCriteria().filter(c => !query || [c.title, c.description, c.type, c.score].join(' ').toLowerCase().includes(query));
+    grid.innerHTML = criteria.map(c => `
+      <div class="employee-item quality-criterion-item">
+        <span class="emp-avatar">${escapeHtml(c.type === 'positive' ? '+' : '−')}</span>
+        <span class="emp-info">
+          <strong>${escapeHtml(c.title)}</strong>
+          <span class="emp-role">${escapeHtml(c.type === 'positive' ? 'Позитивный' : 'Негативный')}${c.score ? ' · ' + escapeHtml(c.score) : ''}</span>
+        </span>
+      </div>`).join('') || '<p class="muted">Критерии не найдены.</p>';
   }
 
   function renderActiveEmployeeCard() {
     const host = $('activeEmployeeCard');
-    const active = state.activeCategory && state.activeCategory !== 'all' ? state.activeCategory : 'Все чаты';
     const count = getVisibleCases().length;
     host.innerHTML = `
       <div class="active-emp">
         <div class="active-emp-top">
-          <span class="emp-avatar big">${escapeHtml(active.slice(0,1).toUpperCase())}</span>
+          <span class="emp-avatar big">Ч</span>
           <div>
-            <strong>${escapeHtml(active)}</strong>
-            <div class="muted">${count} чатов в списке</div>
+            <strong>Все чаты</strong>
+            <div class="muted">${count} заданий в списке</div>
           </div>
         </div>
-        <p class="emp-hint">Сотрудники отвечают на общие чаты. Ответы сохраняются отдельно по каждому аккаунту.</p>
+        <p class="emp-hint">Сотрудник выбирает критерий качества и объясняет, какую ошибку нашёл.</p>
       </div>`;
   }
 
@@ -712,7 +742,7 @@
       return `
         <button type="button" class="case-item${c.id === state.activeCaseId ? ' active' : ''}" data-case="${escapeHtml(c.id)}">
           <span class="case-title">${escapeHtml(c.title || (c.driver ? 'Чат с ' + c.driver : 'Готовый чат'))}</span>
-          <span class="case-sub">${escapeHtml([c.category, c.driver].filter(Boolean).join(' · '))}</span>
+          <span class="case-sub">${escapeHtml(c.driver || '')}</span>
           <span class="case-tags">
             <span class="case-status">${hasNote ? 'Есть ответы' : escapeHtml(c.status || 'На проверке')}</span>
             ${hasNote ? '<span class="case-note-dot" title="Есть ответы сотрудников">●</span>' : ''}
@@ -752,7 +782,6 @@
 
     title.textContent = c.title || (c.driver ? 'Чат с ' + c.driver : 'Готовый чат');
     const metaParts = [];
-    if (c.category) metaParts.push(c.category);
     if (c.driver) metaParts.push('Водитель: ' + c.driver);
     if (c.status) metaParts.push(c.status);
     meta.textContent = metaParts.join(' · ') || 'Готовый чат';
@@ -774,15 +803,27 @@
     const c = getActiveCase();
     const ta = $('operatorNote');
     const status = $('noteStatus');
-    if (!c) { ta.value = ''; ta.disabled = true; status.textContent = 'Выберите кейс, чтобы оставить заметку.'; return; }
-    ta.disabled = false;
-    ta.value = getNoteText(c.id);
-    status.textContent = getNoteText(c.id) ? 'Заметка отправлена бизнес-тренеру.' : 'Напишите, в чём ошибка в чате. Заметка уйдёт бизнес-тренеру.';
+    const criterionSel = $('qualityCriterionSelect');
+    if (criterionSel) {
+      criterionSel.innerHTML = '<option value="">Выберите критерий качества</option>' + getQualityCriteria().map(cr =>
+        `<option value="${escapeHtml(cr.id)}">${escapeHtml(cr.title)}${cr.score ? ' · ' + escapeHtml(cr.score) : ''}</option>`
+      ).join('');
+    }
+    if (!c) {
+      if (ta) { ta.value = ''; ta.disabled = true; }
+      if (criterionSel) criterionSel.disabled = true;
+      if (status) status.textContent = 'Выберите чат, чтобы отправить ответ.';
+      return;
+    }
+    const note = getNoteByUserKey(c.id, getCurrentNoteKey());
+    if (ta) { ta.disabled = false; ta.value = note && note.text ? note.text : ''; }
+    if (criterionSel) { criterionSel.disabled = false; criterionSel.value = note && note.criterionId ? note.criterionId : ''; }
+    if (status) status.textContent = note && note.text ? 'Ответ отправлен на проверку.' : 'Выберите критерий и объясните ошибку.';
   }
 
   // ---------- АДМИН ----------
   function renderAdmin() {
-    renderCategorySelects();
+    renderQualityCriterionSelects();
     renderCaseSelect();
     fillCaseForm();
 
@@ -797,13 +838,13 @@
     renderTrainerNotes();
     renderTrash();
     const trainerNotesCount = getAllTrainerNoteItems().length;
-    $('adminStatus').textContent = `Категорий: ${getCategories().length}. Чатов всего: ${getAllCases().length}. Ответов сотрудников: ${trainerNotesCount}. В корзине: ${(state.trash && state.trash.employees ? state.trash.employees.length : 0)}.`;
+    $('adminStatus').textContent = `Критериев: ${getQualityCriteria().length}. Чатов всего: ${getAllCases().length}. Ответов сотрудников: ${trainerNotesCount}. В корзине: ${(state.trash && state.trash.employees ? state.trash.employees.length : 0)}.`;
   }
 
   function findCaseOwner(caseId) {
     const found = getAllCases().find(c => c.id === caseId);
     if (!found) return null;
-    return { employee: { name: found.category || 'Общие чаты' }, caseItem: found };
+    return { employee: { name: 'Общий чат' }, caseItem: found };
   }
 
   function renderTrainerNotes() {
@@ -841,6 +882,7 @@
             <span class="review-status ${getNoteReviewClass(item.note)}">${getNoteReviewLabel(item.note)}</span>
           </div>
           <div class="trainer-note-meta">Ответил: ${escapeHtml(getNoteAuthor(item.note))}${escapeHtml(email)}${when ? ' · ' + escapeHtml(when) : ''}${escapeHtml(reviewed)}</div>
+          <div class="trainer-note-criterion">Критерий: ${escapeHtml(item.note && item.note.criterionTitle ? item.note.criterionTitle : 'Не выбран')}</div>
           <div class="trainer-note-text">${escapeHtml(item.text)}</div>
         </button>`;
     }).join('');
@@ -873,7 +915,8 @@
     const reviewLabel = getNoteReviewLabel(note);
     const reviewedBy = note && note.reviewedBy ? ' · проверил: ' + note.reviewedBy : '';
     const reviewedAt = note && note.reviewedAt ? ' · ' + new Date(note.reviewedAt).toLocaleString('ru-RU') : '';
-    noteMeta.textContent = `Ответил: ${getNoteAuthor(note)}${note && note.email ? ' · ' + note.email : ''}${noteWhen ? ' · ' + noteWhen : ''} · статус: ${reviewLabel}${reviewedBy}${reviewedAt}`;
+    const criterionText = note && note.criterionTitle ? ` · критерий: ${note.criterionTitle}${note.criterionScore ? ' · ' + note.criterionScore : ''}` : ' · критерий не выбран';
+    noteMeta.textContent = `Ответил: ${getNoteAuthor(note)}${note && note.email ? ' · ' + note.email : ''}${noteWhen ? ' · ' + noteWhen : ''}${criterionText} · статус: ${reviewLabel}${reviewedBy}${reviewedAt}`;
     noteText.textContent = note && note.text ? note.text : '';
     updateTrainerReviewButtons(note);
     setCaseInfoPanel(info, '');
@@ -1056,30 +1099,30 @@
     $('employeeForm').dataset.editing = empId || '__new';
   }
 
-  function renderCategorySelects() {
-    const cats = getCategories();
-    const adminSel = $('adminCategorySelect');
+  function renderQualityCriterionSelects() {
+    const criteria = getQualityCriteria();
+    const adminSel = $('adminCriterionSelect');
     if (adminSel) {
-      adminSel.innerHTML = cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('') + '<option value="__new">+ Новая категория</option>';
-      adminSel.value = cats.includes(state.activeCategory) ? state.activeCategory : (cats[0] || '__new');
-      fillCategoryForm();
+      adminSel.innerHTML = criteria.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.title)}</option>`).join('') + '<option value="__new">+ Новый критерий</option>';
+      if (!criteria.some(c => c.id === adminSel.value)) adminSel.value = criteria[0] ? criteria[0].id : '__new';
+      fillCriterionForm();
     }
-    const caseCatSel = $('caseCategoryInput');
-    if (caseCatSel) {
-      caseCatSel.innerHTML = cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-    }
-    const filterSel = $('caseCategorySelect');
-    if (filterSel) {
-      filterSel.innerHTML = '<option value="all">Все категории</option>' + cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-      filterSel.value = state.activeCategory || 'all';
+    const answerSel = $('qualityCriterionSelect');
+    if (answerSel) {
+      const current = answerSel.value;
+      answerSel.innerHTML = '<option value="">Выберите критерий качества</option>' + criteria.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.title)}${c.score ? ' · ' + escapeHtml(c.score) : ''}</option>`).join('');
+      if (criteria.some(c => c.id === current)) answerSel.value = current;
     }
   }
 
-  function fillCategoryForm() {
-    const sel = $('adminCategorySelect');
-    const input = $('categoryNameInput');
-    if (!sel || !input) return;
-    input.value = sel.value === '__new' ? '' : sel.value;
+  function fillCriterionForm() {
+    const sel = $('adminCriterionSelect');
+    if (!sel) return;
+    const item = sel.value === '__new' ? null : getCriterion(sel.value);
+    if ($('criterionTitleInput')) $('criterionTitleInput').value = item ? item.title || '' : '';
+    if ($('criterionTypeInput')) $('criterionTypeInput').value = item ? item.type || 'negative' : 'negative';
+    if ($('criterionScoreInput')) $('criterionScoreInput').value = item ? item.score || '' : '';
+    if ($('criterionDescriptionInput')) $('criterionDescriptionInput').value = item ? item.description || '' : '';
   }
 
   function renderCaseSelect() {
@@ -1095,10 +1138,9 @@
   function fillCaseForm() {
     const caseId = $('caseSelect') ? $('caseSelect').value : '__new';
     const c = getAllCases().find(x => x.id === caseId);
-    const src = c || { title:'', driver:'', category: getCategories()[0] || 'Без категории', status:'', info:'', transcript:'', hidden:'' };
+    const src = c || { title:'', driver:'', status:'', info:'', transcript:'', hidden:'' };
     if ($('caseTitleInput')) $('caseTitleInput').value = src.title || '';
     $('caseDriverInput').value = src.driver || '';
-    if ($('caseCategoryInput')) $('caseCategoryInput').value = src.category || getCategories()[0] || 'Без категории';
     $('caseStatusInput').value = src.status || '';
     $('caseInfoInput').value = src.info || '';
     $('caseTranscriptInput').value = src.transcript || '';
@@ -1146,6 +1188,16 @@
     $('prevCaseBtn').addEventListener('click', () => shiftCase(-1));
     $('nextCaseBtn').addEventListener('click', () => shiftCase(+1));
 
+    if ($('chatScrollTopBtn')) $('chatScrollTopBtn').addEventListener('click', scrollChatToTop);
+    if ($('chatScrollBottomBtn')) $('chatScrollBottomBtn').addEventListener('click', scrollChatToBottom);
+    const chatCanvas = getChatCanvas();
+    if (chatCanvas) chatCanvas.addEventListener('scroll', updateChatScrollButtons);
+    const transcriptHost = $('transcriptMessages');
+    if (transcriptHost && window.MutationObserver) {
+      new MutationObserver(() => setTimeout(updateChatScrollButtons, 0)).observe(transcriptHost, { childList: true, subtree: true });
+    }
+    window.addEventListener('resize', updateChatScrollButtons);
+
     const createChatBtn = $('createChatBtn');
     if (createChatBtn) createChatBtn.addEventListener('click', () => {
       location.hash = '#admin';
@@ -1177,19 +1229,33 @@
     $('saveNoteBtn').addEventListener('click', () => {
       const c = getActiveCase(); if (!c) return;
       const v = $('operatorNote').value.trim();
+      const criterionId = $('qualityCriterionSelect') ? $('qualityCriterionSelect').value : '';
+      const criterion = getCriterion(criterionId);
       const user = window.IskustvAuth && window.IskustvAuth.getUser ? window.IskustvAuth.getUser() : null;
       const author = window.IskustvAuth && window.IskustvAuth.fullName ? window.IskustvAuth.fullName(user) : '';
       const noteKey = getCurrentNoteKey();
       if (v) {
+        if (!criterion) {
+          $('noteStatus').textContent = 'Сначала выберите критерий качества.';
+          return;
+        }
         const entry = notes[c.id] && notes[c.id].byUser ? notes[c.id] : { byUser: {} };
+        const oldNote = entry.byUser[noteKey] || {};
         entry.byUser[noteKey] = {
           text: v,
+          criterionId: criterion.id,
+          criterionTitle: criterion.title,
+          criterionType: criterion.type,
+          criterionScore: criterion.score,
+          criterionDescription: criterion.description,
+          reviewStatus: oldNote.reviewStatus || 'pending',
+          reviewedAt: oldNote.reviewedAt || '',
+          reviewedBy: oldNote.reviewedBy || '',
           author: author || 'Сотрудник',
           uid: user && user.uid ? user.uid : '',
           email: user && user.email ? user.email : '',
           firstName: user && user.firstName ? user.firstName : '',
           lastName: user && user.lastName ? user.lastName : '',
-          employeeId: state.activeEmployeeId,
           caseId: c.id,
           submittedAt: new Date().toISOString()
         };
@@ -1205,7 +1271,7 @@
       }
       saveNotes();
       renderStats(); renderCaseList(); renderNote(); renderAdmin();
-      $('noteStatus').textContent = v ? 'Заметка отправлена бизнес-тренеру.' : 'Заметка удалена.';
+      $('noteStatus').textContent = v ? 'Ответ отправлен бизнес-тренеру.' : 'Ответ удалён.';
     });
 
     // Экспорт / импорт / сброс
@@ -1232,52 +1298,50 @@
     if ($('reviewAcceptBtn')) $('reviewAcceptBtn').addEventListener('click', () => setTrainerNoteReview('accepted'));
     if ($('reviewRejectBtn')) $('reviewRejectBtn').addEventListener('click', () => setTrainerNoteReview('rejected'));
 
-    if ($('adminCategorySelect')) $('adminCategorySelect').addEventListener('change', fillCategoryForm);
-    function saveCategoryFromForm() {
-      const input = $('categoryNameInput');
-      const sel = $('adminCategorySelect');
-      if (!input || !sel) return;
-      const name = input.value.trim();
-      if (!name) { alert('Введите название категории.'); return; }
-      const oldName = sel.value !== '__new' ? sel.value : '';
-      if (oldName && oldName !== name) {
-        state.cases.forEach(c => { if (c.category === oldName) c.category = name; });
-        state.categories = getCategories().filter(c => c !== oldName);
+    if ($('adminCriterionSelect')) $('adminCriterionSelect').addEventListener('change', fillCriterionForm);
+    function saveCriterionFromForm() {
+      const sel = $('adminCriterionSelect');
+      const title = $('criterionTitleInput') ? $('criterionTitleInput').value.trim() : '';
+      if (!title) { alert('Введите название критерия.'); return; }
+      const data = {
+        title,
+        type: $('criterionTypeInput') ? $('criterionTypeInput').value : 'negative',
+        score: $('criterionScoreInput') ? $('criterionScoreInput').value.trim() : '',
+        description: $('criterionDescriptionInput') ? $('criterionDescriptionInput').value.trim() : ''
+      };
+      if (sel && sel.value && sel.value !== '__new') {
+        const item = getCriterion(sel.value);
+        if (item) Object.assign(item, data);
+      } else {
+        state.criteria.push(Object.assign({ id: 'crit_' + Date.now().toString(36) }, data));
       }
-      if (!state.categories.includes(name)) state.categories.push(name);
-      state.activeCategory = name;
       saveState();
       renderAll();
-      if ($('adminStatus')) $('adminStatus').textContent = 'Категория сохранена.';
+      if ($('adminStatus')) $('adminStatus').textContent = 'Критерий сохранён.';
     }
-    function deleteActiveCategory() {
-      const sel = $('adminCategorySelect');
+    function deleteActiveCriterion() {
+      const sel = $('adminCriterionSelect');
       if (!sel || sel.value === '__new') return;
-      const name = sel.value;
-      if (!confirm(`Удалить категорию "${name}"? Чаты останутся и перейдут в «Без категории».`)) return;
-      state.categories = getCategories().filter(c => c !== name);
-      state.cases.forEach(c => { if (c.category === name) c.category = 'Без категории'; });
-      if (!state.categories.includes('Без категории')) state.categories.unshift('Без категории');
-      state.activeCategory = 'all';
+      const item = getCriterion(sel.value);
+      if (!item) return;
+      if (!confirm(`Удалить критерий "${item.title}"? Старые ответы сотрудников сохранят название критерия.`)) return;
+      state.criteria = getQualityCriteria().filter(c => c.id !== item.id);
+      if (!state.criteria.length) state.criteria = defaultQualityCriteria();
       saveState();
       renderAll();
     }
-    if ($('saveCategoryBtn')) $('saveCategoryBtn').addEventListener('click', saveCategoryFromForm);
-    if ($('categoryForm')) $('categoryForm').addEventListener('submit', ev => { ev.preventDefault(); saveCategoryFromForm(); });
-    if ($('deleteCategoryBtn')) $('deleteCategoryBtn').addEventListener('click', deleteActiveCategory);
+    if ($('saveCriterionBtn')) $('saveCriterionBtn').addEventListener('click', saveCriterionFromForm);
+    if ($('criterionForm')) $('criterionForm').addEventListener('submit', ev => { ev.preventDefault(); saveCriterionFromForm(); });
+    if ($('deleteCriterionBtn')) $('deleteCriterionBtn').addEventListener('click', deleteActiveCriterion);
 
     // Форма чата
-    if ($('caseCategorySelect')) $('caseCategorySelect').addEventListener('change', () => {
-      state.activeCategory = $('caseCategorySelect').value || 'all';
-      renderCaseList();
-    });
     $('caseSelect').addEventListener('change', () => fillCaseForm());
     if ($('addDriverMsgBtn')) $('addDriverMsgBtn').addEventListener('click', () => insertTranscriptSpeaker('Водитель'));
     if ($('addAgentMsgBtn')) $('addAgentMsgBtn').addEventListener('click', () => insertTranscriptSpeaker('Сотрудник'));
     if ($('addDateMsgBtn')) $('addDateMsgBtn').addEventListener('click', insertTranscriptDate);
     if ($('addSystemMsgBtn')) $('addSystemMsgBtn').addEventListener('click', insertTranscriptSystemInfo);
     if ($('privateMessageBtn')) $('privateMessageBtn').addEventListener('click', makeSelectedTextPrivate);
-    ['caseTitleInput','caseDriverInput','caseCategoryInput','caseInfoInput','caseTranscriptInput'].forEach(id => {
+    ['caseTitleInput','caseDriverInput','caseInfoInput','caseTranscriptInput'].forEach(id => {
       const el = $(id);
       if (el) el.addEventListener('input', () => {
         renderCaseEditorPreview();
@@ -1291,12 +1355,9 @@
     $('caseForm').addEventListener('submit', (ev) => {
       ev.preventDefault();
       const editing = $('caseForm').dataset.editing;
-      const category = ($('caseCategoryInput') && $('caseCategoryInput').value) || 'Без категории';
-      if (!state.categories.includes(category)) state.categories.push(category);
       const data = {
         title: ($('caseTitleInput') && $('caseTitleInput').value.trim()) || '',
         driver: $('caseDriverInput').value.trim(),
-        category,
         status: $('caseStatusInput').value.trim() || 'На проверке',
         info: $('caseInfoInput').value,
         transcript: $('caseTranscriptInput').value,
@@ -1311,7 +1372,6 @@
         state.cases.push(Object.assign({ id }, data));
         state.activeCaseId = id;
       }
-      state.activeCategory = category;
       saveState(); renderAll();
       if ($('adminStatus')) $('adminStatus').textContent = 'Чат сохранён.';
     });
@@ -1391,6 +1451,7 @@
     renderChat();
     renderNote();
     renderAdmin();
+    setTimeout(updateChatScrollButtons, 0);
   }
 
   function deleteActiveEmployee() {
