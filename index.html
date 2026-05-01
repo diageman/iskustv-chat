@@ -148,6 +148,7 @@
             <button class="toolbar-btn" type="button" id="exportBtn">Экспорт JSON</button>
             <button class="toolbar-btn" type="button" id="importBtn">Импорт JSON</button>
             <button class="toolbar-btn danger" type="button" id="resetBtn">Сбросить демо</button>
+            <button class="toolbar-btn" type="button" id="adminLogoutBtn">Выйти из админки</button>
             <input id="importInput" type="file" accept="application/json" hidden>
           </div>
         </div>
@@ -288,17 +289,22 @@
       <div class="admin-lock-icon">🔒</div>
       <p class="section-label">Защищённый раздел</p>
       <h2>Вход в админ-панель</h2>
-      <p>Введите пинкод администратора. Код не отображается на экране и не хранится в открытом виде в файлах сайта.</p>
+      <p>Введите email и пароль администратора. Доступ проверяется через Firebase Authentication.</p>
       <label>
-        Пинкод
-        <input id="adminPinInput" type="password" inputmode="text" autocomplete="new-password" placeholder="Введите пинкод" />
+        Email администратора
+        <input id="adminEmailInput" type="email" autocomplete="username" placeholder="admin@example.com" required />
+      </label>
+      <label>
+        Пароль
+        <input id="adminPasswordInput" type="password" autocomplete="current-password" placeholder="Введите пароль" required />
       </label>
       <div class="admin-lock-error" id="adminLockError" role="alert"></div>
-      <button class="save-btn admin-lock-submit" type="submit">Войти</button>
+      <button class="save-btn admin-lock-submit" type="submit">Войти в админку</button>
     </form>
   </div>
 
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
   <script>
     window.ISKUSTV_FIREBASE_CONFIG = {

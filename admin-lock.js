@@ -1,27 +1,18 @@
-// Admin panel PIN lock. The real PIN is not stored as plain text.
+// Admin panel lock via Firebase Authentication.
 (function () {
   'use strict';
 
-  const ADMIN_HASH = 'e430d621474f08cc8f71de6892e56f5db446b5b47498fe1ceb306a8a0a087b1f';
-  const UNLOCK_KEY = 'iskustv_admin_unlocked_v1';
+  let adminUser = null;
+  let authReady = false;
 
-  function hexFromBuffer(buffer) {
-    return Array.from(new Uint8Array(buffer)).map(function (b) {
-      return b.toString(16).padStart(2, '0');
-    }).join('');
-  }
-
-  async function sha256(text) {
-    if (!window.crypto || !window.crypto.subtle) {
-      throw new Error('В этом браузере недоступна безопасная проверка кода. Откройте сайт в Chrome, Edge или Firefox.');
-    }
-    const data = new TextEncoder().encode(String(text));
-    const digest = await window.crypto.subtle.digest('SHA-256', data);
-    return hexFromBuffer(digest);
+  function getAuth() {
+    if (!window.firebase || !window.firebase.auth) return null;
+    try { return window.firebase.auth(); }
+    catch (_) { return null; }
   }
 
   function isUnlocked() {
-    return sessionStorage.getItem(UNLOCK_KEY) === '1';
+    return !!adminUser;
   }
 
   function setAdminVisible(visible) {
@@ -37,13 +28,15 @@
 
   function openModal() {
     const modal = document.getElementById('adminLockModal');
-    const input = document.getElementById('adminPinInput');
+    const email = document.getElementById('adminEmailInput');
+    const password = document.getElementById('adminPasswordInput');
     const error = document.getElementById('adminLockError');
     if (!modal) return;
     if (error) error.textContent = '';
+    if (password) password.value = '';
     modal.classList.add('is-open');
     modal.setAttribute('aria-hidden', 'false');
-    setTimeout(function () { if (input) { input.value = ''; input.focus(); } }, 30);
+    setTimeout(function () { if (email) email.focus(); }, 30);
   }
 
   function closeModal() {
@@ -53,24 +46,55 @@
     modal.setAttribute('aria-hidden', 'true');
   }
 
-  function unlockAdmin() {
-    sessionStorage.setItem(UNLOCK_KEY, '1');
-    setAdminVisible(true);
-    closeModal();
-    location.hash = 'admin';
-    setTimeout(function () {
-      const admin = document.getElementById('admin');
-      if (admin) admin.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 60);
+  function unlockAdmin(user) {
+    adminUser = user || null;
+    setAdminVisible(!!adminUser);
+    if (adminUser) {
+      closeModal();
+      location.hash = 'admin';
+      setTimeout(function () {
+        const admin = document.getElementById('admin');
+        if (admin) admin.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 60);
+    }
+  }
+
+  function showAuthError(err) {
+    const error = document.getElementById('adminLockError');
+    const code = err && err.code ? err.code : '';
+    let message = 'Не удалось войти. Проверьте email и пароль.';
+    if (code === 'auth/invalid-email') message = 'Некорректный email.';
+    if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') message = 'Неверный email или пароль.';
+    if (code === 'auth/too-many-requests') message = 'Слишком много попыток. Попробуйте позже.';
+    if (code === 'auth/network-request-failed') message = 'Нет соединения с Firebase. Проверьте интернет.';
+    if (error) error.textContent = message;
   }
 
   document.addEventListener('DOMContentLoaded', function () {
     document.body.classList.remove('admin-unlocked');
-    setAdminVisible(isUnlocked());
+    setAdminVisible(false);
 
-    if (location.hash === '#admin' && !isUnlocked()) {
-      history.replaceState(null, '', location.pathname + location.search);
-      openModal();
+    const auth = getAuth();
+    if (!auth) {
+      console.warn('Firebase Auth не подключён. Админ-вход недоступен.');
+      if (location.hash === '#admin') openModal();
+    } else {
+      try { auth.setPersistence(window.firebase.auth.Auth.Persistence.LOCAL); } catch (_) {}
+      auth.onAuthStateChanged(function (user) {
+        authReady = true;
+        adminUser = user || null;
+        setAdminVisible(!!adminUser);
+        if (adminUser) {
+          closeModal();
+          if (location.hash === '#admin') setTimeout(function () {
+            const admin = document.getElementById('admin');
+            if (admin) admin.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 60);
+        } else if (location.hash === '#admin') {
+          history.replaceState(null, '', location.pathname + location.search);
+          openModal();
+        }
+      });
     }
 
     document.querySelectorAll('a[href="#admin"]').forEach(function (link) {
@@ -86,25 +110,36 @@
     });
 
     const form = document.getElementById('adminLockForm');
-    const input = document.getElementById('adminPinInput');
+    const email = document.getElementById('adminEmailInput');
+    const password = document.getElementById('adminPasswordInput');
     const error = document.getElementById('adminLockError');
 
-    if (form && input) {
-      form.addEventListener('submit', async function (event) {
+    if (form && email && password) {
+      form.addEventListener('submit', function (event) {
         event.preventDefault();
         if (error) error.textContent = '';
-        try {
-          const hash = await sha256(input.value.trim());
-          if (hash === ADMIN_HASH) {
-            unlockAdmin();
-          } else {
-            if (error) error.textContent = 'Неверный пинкод.';
-            input.value = '';
-            input.focus();
-          }
-        } catch (err) {
-          if (error) error.textContent = err.message || 'Не удалось проверить пинкод.';
+        const authNow = getAuth();
+        if (!authNow) {
+          if (error) error.textContent = 'Firebase Auth не подключён. Проверьте настройки сайта.';
+          return;
         }
+        authNow.signInWithEmailAndPassword(email.value.trim(), password.value)
+          .then(function (result) { unlockAdmin(result.user); })
+          .catch(showAuthError);
+      });
+    }
+
+    const logoutBtn = document.getElementById('adminLogoutBtn');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', function () {
+        const authNow = getAuth();
+        if (!authNow) return;
+        authNow.signOut().then(function () {
+          adminUser = null;
+          setAdminVisible(false);
+          closeModal();
+          location.hash = 'workspace';
+        }).catch(showAuthError);
       });
     }
 
