@@ -953,28 +953,13 @@
 
     const caseId = modal.dataset.caseId;
     const userKey = modal.dataset.userKey;
+
     if (!caseId || !userKey || !notes[caseId]) {
       alert('Не удалось найти ответ сотрудника. Обновите страницу и попробуйте ещё раз.');
       return;
     }
 
     const entry = notes[caseId];
-    let note = null;
-    let firebasePath = '';
-
-    if (entry.byUser && entry.byUser[userKey]) {
-      note = entry.byUser[userKey];
-      firebasePath = `${caseId}/byUser/${userKey}`;
-    } else if (!entry.byUser && userKey === 'legacy') {
-      note = entry;
-      firebasePath = caseId;
-    }
-
-    if (!note) {
-      alert('Ответ сотрудника не найден. Обновите страницу и попробуйте ещё раз.');
-      return;
-    }
-
     const admin = window.firebase && window.firebase.auth && window.firebase.auth().currentUser;
     const reviewPatch = {
       reviewStatus: status,
@@ -982,7 +967,15 @@
       reviewedBy: admin && admin.email ? admin.email : 'Администратор'
     };
 
-    Object.assign(note, reviewPatch);
+    if (entry.byUser && entry.byUser[userKey]) {
+      entry.byUser[userKey] = Object.assign({}, entry.byUser[userKey], reviewPatch);
+    } else if (!entry.byUser && userKey === 'legacy') {
+      notes[caseId] = Object.assign({}, entry, reviewPatch);
+    } else {
+      alert('Ответ сотрудника не найден. Обновите страницу и попробуйте ещё раз.');
+      return;
+    }
+
     trainerReviewFilter = status === 'rejected' ? 'rejected' : 'reviewed';
 
     localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
@@ -991,13 +984,11 @@
     renderCaseList();
     renderTrainerNotes();
 
-    if (firebaseReady && firebaseNotesRef && firebasePath) {
-      firebaseNotesRef.child(firebasePath).update(reviewPatch).catch(err => {
+    if (firebaseReady && firebaseNotesRef) {
+      firebaseNotesRef.set(notes).catch(err => {
         console.warn('Firebase review status save error:', err);
         alert('Статус изменился на экране, но Firebase не дал сохранить решение. Проверьте правила Realtime Database для okkReview/notes.');
       });
-    } else {
-      saveNotes();
     }
   }
 
