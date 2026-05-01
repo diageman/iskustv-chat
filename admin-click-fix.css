@@ -1,0 +1,2 @@
+/* Fix admin buttons clickability */
+.admin-card,.admin-card form,.form-actions,.save-btn,.toolbar-btn{position:relative;z-index:3}.save-btn,.toolbar-btn{pointer-events:auto}.employee-form-lock-fix{pointer-events:auto}

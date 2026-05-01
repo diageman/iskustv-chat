@@ -963,8 +963,7 @@
         renderAll();
       }
     });
-    $('employeeForm').addEventListener('submit', (ev) => {
-      ev.preventDefault();
+    function saveEmployeeFromForm() {
       const editing = $('employeeForm').dataset.editing;
       const data = {
         name: $('employeeName').value.trim() || 'Без имени',
@@ -980,9 +979,18 @@
         const id = 'emp_' + Date.now().toString(36);
         state.employees.push(Object.assign({ id, cases: [] }, data));
         state.activeEmployeeId = id;
+        state.activeCaseId = null;
       }
-      saveState(); renderAll();
+      saveState();
+      renderAll();
+      if ($('adminStatus')) $('adminStatus').textContent = 'Сотрудник сохранён.';
+    }
+
+    $('employeeForm').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      saveEmployeeFromForm();
     });
+    if ($('saveEmployeeBtn')) $('saveEmployeeBtn').addEventListener('click', saveEmployeeFromForm);
 
     // Форма кейса
     $('caseEmployeeSelect').addEventListener('change', () => { renderCaseSelect(); fillCaseForm(); });
