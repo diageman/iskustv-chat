@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iskustv Chat — проверка сотрудников</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="sidebar-resize.css" />
+  <link rel="stylesheet" href="auth.css" />
+  <link rel="stylesheet" href="trainer-modal.css" />
+  <link rel="stylesheet" href="admin-lock.css" />
+</head>
+<body class="crm-body auth-locked">
+  <div class="crm-app">
+    <aside class="crm-sidebar" id="crmSidebar">
+      <div class="crm-logo">
+        <div class="crm-logo-title">Тренажер для ОКК</div>
+      </div>
+
+      <button class="crm-create-btn" type="button" id="createChatBtn">Создать чат <span>+</span></button>
+
+      <nav class="crm-menu" aria-label="Главное меню">
+        <a href="#workspace" class="crm-menu-item"><span>⌂</span>Панель</a>
+        <a href="#workspace" class="crm-menu-item active"><span>●</span>Чаты <b id="chatBadge">18</b></a>
+        <a href="#admin" class="crm-menu-item"><span>✎</span>Админ-панель</a>
+        <a href="#admin" class="crm-menu-item"><span>⚙</span>Настройки</a>
+      </nav>
+
+      <div class="crm-plan-card">
+        <strong>Тариф: Рабочий</strong>
+        <span>Локальная версия сайта</span>
+        <a href="#admin">Управление данными</a>
+      </div>
+
+      <button class="crm-collapse" id="sidebarCollapseBtn" type="button">« Свернуть меню</button>
+      <button class="crm-sidebar-toggle" id="sidebarToggle" type="button" title="Свернуть/развернуть меню">‹</button>
+      <div class="crm-sidebar-resizer" id="sidebarResizer" title="Потяните, чтобы изменить ширину"></div>
+    </aside>
+
+    <section class="crm-main">
+      <header class="crm-topbar">
+        <div class="crm-tabs">
+          <a href="#workspace">Главная</a>
+          <a href="#workspace" class="active">Чаты</a>
+          <a href="#admin">Сотрудники</a>
+          <a href="#admin">Кейсы</a>
+          <a href="#admin">Настройки</a>
+        </div>
+        <div class="crm-top-actions">
+          <div class="crm-brand-badge"><span class="crm-brand-icon">♞</span><strong>SvoiBitrix</strong></div>
+          <button class="crm-user" id="changeUserBtn" type="button" title="Сменить пользователя"><div class="crm-user-avatar" id="crmUserAvatar">Д</div><div><strong id="crmUserName">Дарья</strong><small>В сети</small></div></button>
+        </div>
+      </header>
+
+      <main class="crm-workspace" id="workspace">
+        <aside class="crm-chat-list-panel" id="crmChatListPanel">
+          <div class="crm-list-search">
+            <span>⌕</span>
+            <input id="employeeSearchInput" type="search" placeholder="Поиск по сотрудникам" />
+          </div>
+
+          <div class="crm-filter-tabs" id="caseFilterTabs">
+            <button class="active" type="button" data-case-filter="all">ВСЕ <span id="statsMini">0</span></button>
+            <button type="button" data-case-filter="checked">Проверенные <span id="checkedMini">0</span></button>
+            <button type="button" data-case-filter="unchecked">Не проверенные <span id="uncheckedMini">0</span></button>
+          </div>
+
+          <section class="crm-section-card compact">
+            <div class="crm-section-title">
+              <div>
+                <p class="section-label">Сотрудники</p>
+                <h2>Выбор сотрудника</h2>
+              </div>
+            </div>
+            <div class="employee-list crm-employee-list" id="employeeGrid"></div>
+          </section>
+
+          <section class="crm-section-card compact cases-card">
+            <div id="activeEmployeeCard"></div>
+            <div class="queue-head crm-queue-head">
+              <div>
+                <p class="section-label">Чаты сотрудника</p>
+                <h3>Очередь кейсов</h3>
+              </div>
+              <span class="queue-pill" id="queueCount"></span>
+            </div>
+            <div class="case-list crm-case-list" id="caseList"></div>
+          </section>
+          <div class="crm-chat-list-resizer" id="chatListResizer" title="Потяните, чтобы изменить ширину панели"></div>
+        </aside>
+
+        <section class="crm-dialog-panel">
+          <div class="crm-dialog-head">
+            <div class="crm-contact-main">
+              <div class="contact-avatar" id="contactAvatar">В</div>
+              <div>
+                <div class="crm-contact-line"><h2 id="caseTitle">Выберите сотрудника</h2><span class="crm-client-badge">Кейс ОКК</span></div>
+                <p class="chat-meta" id="caseMeta">После выбора появятся готовые чаты для проверки.</p>
+              </div>
+            </div>
+            <div class="crm-dialog-actions">
+              <button type="button">Добавить тег</button>
+              <button type="button">Статус ▾</button>
+              <button type="button">⋯</button>
+            </div>
+          </div>
+
+          <section class="bitrix-window crm-chat-window">
+            <div class="bitrix-topbar crm-chat-subhead">
+              <div class="bitrix-contact">
+                <div class="contact-avatar small" id="contactAvatarMirror">В</div>
+                <div>
+                  <strong id="contactName">Водитель</strong>
+                  <div class="contact-subtitle">Диалог для проверки оператором ОКК</div>
+                </div>
+              </div>
+              <div class="chat-nav">
+                <button class="nav-btn" type="button" id="prevCaseBtn">Назад</button>
+                <button class="nav-btn" type="button" id="nextCaseBtn">Следующий</button>
+              </div>
+            </div>
+
+            <div class="chat-canvas crm-chat-canvas">
+              <div class="case-info-panel" id="caseInfoPanel" hidden></div>
+              <div class="chat-thread" id="transcriptMessages"></div>
+            </div>
+
+            <div class="crm-message-box">
+              <textarea id="operatorNote" rows="3" placeholder="Напишите заметку по проверке кейса..."></textarea>
+              <div class="crm-message-actions">
+                <span id="noteStatus">Заметки сохраняются локально в браузере.</span>
+                <button class="save-btn" type="button" id="saveNoteBtn">Сохранить заметку</button>
+              </div>
+            </div>
+          </section>
+        </section>
+      </main>
+
+      <section class="crm-admin is-admin-locked" id="admin" aria-hidden="true">
+        <div class="admin-head">
+          <div>
+            <p class="section-label">Админ-панель</p>
+            <h2>Редактирование сотрудников и готовых чатов</h2>
+            <p class="admin-description">Здесь можно менять сотрудников, кейсы, тексты диалогов и настройки будущего API.</p>
+          </div>
+          <div class="toolbar">
+            <button class="toolbar-btn" type="button" id="exportBtn">Экспорт JSON</button>
+            <button class="toolbar-btn" type="button" id="importBtn">Импорт JSON</button>
+            <button class="toolbar-btn danger" type="button" id="resetBtn">Сбросить демо</button>
+            <input id="importInput" type="file" accept="application/json" hidden>
+          </div>
+        </div>
+
+        <div class="admin-grid">
+          <section class="admin-card">
+            <div class="admin-card-head">
+              <div><p class="section-label">Сотрудники</p><h3>Редактор сотрудника</h3></div>
+              <select id="employeeSelect"></select>
+            </div>
+            <form id="employeeForm" class="form-grid">
+              <label>Имя<input id="employeeName" type="text"></label>
+              <label>Аватар или инициалы<input id="employeeAvatar" type="text" maxlength="8" placeholder="А, АК, 👩"></label>
+              <label>Отдел / роль<input id="employeeRole" type="text"></label>
+              <label>Стаж / статус<input id="employeeExperience" type="text"></label>
+              <label class="full">Краткое описание<textarea id="employeeAbout" rows="3"></textarea></label>
+              <label class="full">Подпись для карточки<textarea id="employeeHint" rows="2"></textarea></label>
+              <div class="full form-actions split-actions">
+                <button class="toolbar-btn danger" id="deleteEmployeeBtn" type="button">Удалить сотрудника</button>
+                <button class="save-btn" type="submit">Сохранить сотрудника</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="admin-card admin-case-editor-card">
+            <div class="admin-card-head stacked admin-case-editor-head">
+              <div><p class="section-label">Кейсы</p><h3>Удобный редактор чата</h3><p class="admin-footnote">Добавляйте реплики кнопками, вставляйте дату/инфо в любое место и сохраняйте готовый чат.</p></div>
+              <div class="dual-selects"><select id="caseEmployeeSelect"></select><select id="caseSelect"></select></div>
+            </div>
+            <form id="caseForm" class="form-grid case-editor-form">
+              <label>Имя водителя<input id="caseDriverInput" type="text"></label>
+              <label>Статус<input id="caseStatusInput" type="text" placeholder="На проверке"></label>
+              <label class="full">Системный блок в чате (необязательно)<textarea id="caseInfoInput" rows="7" placeholder="Сделка прикреплена к диалогу&#10;Дмитрий Васильченко - СВОИ (VK)&#10;15:17&#10;&#10;Контактная информация сохранена в контакт&#10;Дмитрий Васильченко&#10;Телефон&#10;+79115557153"></textarea></label>
+              <label class="full case-transcript-label case-editor-main-field">
+                <span class="case-transcript-title">Текст чата</span>
+                <div class="case-transcript-toolbar transcript-builder">
+                  <button class="speaker-btn speaker-driver" type="button" id="addDriverMsgBtn">Водитель</button>
+                  <button class="speaker-btn speaker-agent" type="button" id="addAgentMsgBtn">Сотрудник</button>
+                  <button class="speaker-btn speaker-date" type="button" id="addDateMsgBtn">Дата</button>
+                  <button class="speaker-btn speaker-info" type="button" id="addSystemMsgBtn">Инфо</button>
+                  <button class="ghost-eye-btn speaker-private" type="button" id="privateMessageBtn" title="Сделать сообщение видимым только сотрудникам">◉̸</button>
+                  <span>Водитель/Сотрудник/Дата/Инфо вставляются в месте курсора. Глазик делает выделенную строку скрытой.</span>
+                </div>
+                <div class="transcript-editor-shell">
+                  <pre class="transcript-highlight" id="caseTranscriptHighlight" aria-hidden="true"></pre>
+                  <textarea id="caseTranscriptInput" rows="18" spellcheck="false" placeholder="Водитель 15:17: Здравствуйте, я могу новый профиль создать с другим номера телефона?&#10;&#10;Скрыто 16:57: dfs://support/4b82874baf1a4924957770ded3c75863/69f0bcb26e1822a99b51af75&#10;&#10;Сотрудник 15:22: Здравствуйте!&#10;Вас приветствует таксопарк «СВОИ», меня зовут Илья."></textarea>
+                </div>
+              </label>
+              <label class="full">Внутренняя пометка<textarea id="caseHiddenInput" rows="3"></textarea></label>
+              <div class="full form-actions"><button class="save-btn" type="submit">Сохранить кейс</button></div>
+            </form>
+          </section>
+        </div>
+
+        <div class="admin-grid admin-grid-bottom admin-private-zone">
+          <section class="admin-card trainer-notes-card">
+            <div class="admin-card-head">
+              <div>
+                <p class="section-label">Проверка бизнес-тренера</p>
+                <h3>Заметки на чаты</h3>
+              </div>
+            </div>
+            <div class="trainer-notes-list" id="trainerNotesList"></div>
+            <p class="admin-footnote">Нажмите на заметку — откроется сам чат, а снизу будет текст сотрудника о найденной ошибке.</p>
+          </section>
+
+          <section class="admin-card trash-card">
+            <div class="admin-card-head">
+              <div>
+                <p class="section-label">Корзина</p>
+                <h3>Удалённые сотрудники</h3>
+              </div>
+              <button class="toolbar-btn danger" id="emptyTrashBtn" type="button">Очистить корзину</button>
+            </div>
+            <div class="trash-list" id="trashList"></div>
+            <p class="admin-footnote">Удалённые сотрудники сначала попадают сюда. Их можно восстановить или удалить окончательно.</p>
+          </section>
+          <section class="admin-card status-card">
+            <p class="section-label">Статус</p>
+            <h3>Что готово</h3>
+            <div class="header-stats" id="stats"></div>
+            <ul class="status-list">
+              <li>Интерфейс в стиле современного чат/CRM-кабинета</li>
+              <li>Тёмное меню слева и верхняя навигация</li>
+              <li>Список сотрудников и очередь готовых чатов</li>
+              <li>Окно диалога с пузырями сообщений</li>
+              <li>Локальные заметки ОКК по каждому кейсу</li>
+            </ul>
+            <div class="status-line" id="adminStatus">Система готова.</div>
+          </section>
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <div class="trainer-chat-modal" id="trainerChatModal" aria-hidden="true">
+    <div class="trainer-chat-backdrop" data-trainer-chat-close></div>
+    <section class="trainer-chat-card" role="dialog" aria-modal="true" aria-labelledby="trainerChatTitle">
+      <header class="trainer-chat-head">
+        <div>
+          <p class="section-label">Заметка на чат</p>
+          <h2 id="trainerChatTitle">Чат</h2>
+          <p id="trainerChatMeta">Просмотр для бизнес-тренера</p>
+        </div>
+        <button class="trainer-chat-close" type="button" data-trainer-chat-close aria-label="Закрыть">×</button>
+      </header>
+      <div class="trainer-chat-body">
+        <div class="trainer-chat-info" id="trainerChatInfo" hidden></div>
+        <div class="trainer-chat-thread" id="trainerChatThread"></div>
+        <div class="trainer-chat-note">
+          <div class="trainer-chat-note-title">Заметка сотрудника</div>
+          <div class="trainer-chat-note-meta" id="trainerChatNoteMeta"></div>
+          <div class="trainer-chat-note-text" id="trainerChatNoteText"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="auth-modal" id="authModal" aria-hidden="true">
+    <div class="auth-card">
+      <div class="admin-lock-icon">👤</div>
+      <p class="section-label">Вход сотрудника</p>
+      <h2>Авторизация</h2>
+      <p>Введите имя и фамилию. Эти данные будут прикрепляться к заметкам, которые уходят бизнес-тренеру.</p>
+      <form id="authForm" autocomplete="off">
+        <label>Имя<input id="authFirstName" type="text" autocomplete="given-name" placeholder="Например: Дарья" required></label>
+        <label>Фамилия<input id="authLastName" type="text" autocomplete="family-name" placeholder="Например: Иванова" required></label>
+        <div class="admin-lock-error" id="authError" role="alert"></div>
+        <button class="save-btn admin-lock-submit" type="submit">Войти</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="admin-lock-modal" id="adminLockModal" aria-hidden="true">
+    <div class="admin-lock-backdrop" data-admin-lock-close></div>
+    <form class="admin-lock-card" id="adminLockForm" autocomplete="off">
+      <button class="admin-lock-close" type="button" data-admin-lock-close aria-label="Закрыть">×</button>
+      <div class="admin-lock-icon">🔒</div>
+      <p class="section-label">Защищённый раздел</p>
+      <h2>Вход в админ-панель</h2>
+      <p>Введите пинкод администратора. Код не отображается на экране и не хранится в открытом виде в файлах сайта.</p>
+      <label>
+        Пинкод
+        <input id="adminPinInput" type="password" inputmode="text" autocomplete="new-password" placeholder="Введите пинкод" />
+      </label>
+      <div class="admin-lock-error" id="adminLockError" role="alert"></div>
+      <button class="save-btn admin-lock-submit" type="submit">Войти</button>
+    </form>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+  <script>
+    window.ISKUSTV_FIREBASE_CONFIG = {
+      apiKey: "AIzaSyAW-x9zndvgs-kLZ8Sgno6_Q-lXZB5zTFE",
+      authDomain: "trenazher-okk.firebaseapp.com",
+      databaseURL: "https://trenazher-okk-default-rtdb.firebaseio.com",
+      projectId: "trenazher-okk",
+      storageBucket: "trenazher-okk.firebasestorage.app",
+      messagingSenderId: "856885562833",
+      appId: "1:856885562833:web:0baec6e01c3537087824f0"
+    };
+  </script>
+  <script src="auth.js"></script>
+  <script src="script.js"></script>
+  <script src="sidebar-resize.js"></script>
+  <script src="chat-list-resize.js"></script>
+  <script src="admin-lock.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      setInterval(function () {
+        var a = document.getElementById('contactAvatar');
+        var b = document.getElementById('contactAvatarMirror');
+        if (a && b) b.textContent = a.textContent;
+        var q = document.getElementById('queueCount');
+        var m = document.getElementById('statsMini');
+        var c = document.getElementById('chatBadge');
+        if (q && m) m.textContent = q.textContent || '0';
+        if (q && c) c.textContent = q.textContent || '0';
+      }, 500);
+    });
+  </script>
+</body>
+</html>
