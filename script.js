@@ -11,8 +11,10 @@
   const FIREBASE_ROOT = 'okkReview';
   let firebaseStateRef = null;
   let firebaseNotesRef = null;
+  let firebaseUsersRef = null;
   let firebaseReady = false;
   let applyingRemote = false;
+  let accessUsers = {};
 
   // ---------- ДЕМО-ДАННЫЕ ----------
   function demoState() {
@@ -211,6 +213,7 @@
       const db = window.firebase.database();
       firebaseStateRef = db.ref(FIREBASE_ROOT + '/state');
       firebaseNotesRef = db.ref(FIREBASE_ROOT + '/notes');
+      firebaseUsersRef = db.ref(FIREBASE_ROOT + '/users');
       firebaseReady = true;
 
       firebaseStateRef.on('value', snapshot => {
@@ -234,6 +237,11 @@
         applyingRemote = false;
         renderAll();
       }, err => console.warn('Firebase notes sync error:', err));
+
+      firebaseUsersRef.on('value', snapshot => {
+        accessUsers = snapshot.val() || {};
+        renderAccessRequests();
+      }, err => console.warn('Firebase users sync error:', err));
     } catch (err) {
       console.warn('Firebase init error:', err);
     }
@@ -738,6 +746,7 @@
     if ($('apiKey')) $('apiKey').value = state.api.key || '';
     if ($('apiInstructions')) $('apiInstructions').value = state.api.instructions || '';
 
+    renderAccessRequests();
     renderTrainerNotes();
     renderTrash();
     const trainerNotesCount = getAllTrainerNoteItems().length;
@@ -821,6 +830,82 @@
     if (!modal) return;
     modal.classList.remove('is-open');
     modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function renderAccessRequests() {
+    const host = $('accessRequestsList');
+    if (!host) return;
+    const users = Object.values(accessUsers || {}).filter(u => u && u.role !== 'admin');
+    users.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    if (!users.length) {
+      host.innerHTML = '<div class="trainer-note-empty">Заявок пока нет.</div>';
+      return;
+    }
+    host.innerHTML = users.map(u => {
+      const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Без имени';
+      const created = u.createdAt ? new Date(u.createdAt).toLocaleString('ru-RU') : '';
+      const approved = u.approved === true || u.status === 'approved';
+      const rejected = u.status === 'rejected';
+      const revoked = u.status === 'revoked';
+      const statusClass = approved ? 'ok' : rejected ? 'bad' : revoked ? 'revoked' : 'wait';
+      const statusText = approved ? 'Допущен' : rejected ? 'Отклонён' : revoked ? 'Доступ забран' : 'Ожидает';
+      return `
+        <div class="access-request-item">
+          <div class="access-request-person">
+            <strong>${escapeHtml(name)}</strong>
+            <span>${escapeHtml(u.email || '')}${created ? ' · ' + escapeHtml(created) : ''}</span>
+          </div>
+          <div class="access-request-actions">
+            <span class="access-status ${statusClass}">${statusText}</span>
+            ${approved ? `<button class="toolbar-btn danger" type="button" data-revoke-user="${escapeHtml(u.uid || '')}">Забрать доступ</button>` : `<button class="toolbar-btn restore" type="button" data-approve-user="${escapeHtml(u.uid || '')}">Пустить</button>`}
+            ${rejected || revoked ? '' : `<button class="toolbar-btn danger" type="button" data-reject-user="${escapeHtml(u.uid || '')}">Отклонить</button>`}
+          </div>
+        </div>`;
+    }).join('');
+
+    host.querySelectorAll('[data-approve-user]').forEach(btn => {
+      btn.addEventListener('click', () => approveAccessUser(btn.getAttribute('data-approve-user')));
+    });
+    host.querySelectorAll('[data-reject-user]').forEach(btn => {
+      btn.addEventListener('click', () => rejectAccessUser(btn.getAttribute('data-reject-user')));
+    });
+    host.querySelectorAll('[data-revoke-user]').forEach(btn => {
+      btn.addEventListener('click', () => revokeAccessUser(btn.getAttribute('data-revoke-user')));
+    });
+  }
+
+  function approveAccessUser(uid) {
+    if (!uid || !firebaseUsersRef) return;
+    const admin = window.firebase && window.firebase.auth && window.firebase.auth().currentUser;
+    firebaseUsersRef.child(uid).update({
+      approved: true,
+      status: 'approved',
+      approvedAt: new Date().toISOString(),
+      approvedBy: admin && admin.email ? admin.email : 'admin'
+    });
+  }
+
+  function rejectAccessUser(uid) {
+    if (!uid || !firebaseUsersRef) return;
+    const admin = window.firebase && window.firebase.auth && window.firebase.auth().currentUser;
+    firebaseUsersRef.child(uid).update({
+      approved: false,
+      status: 'rejected',
+      rejectedAt: new Date().toISOString(),
+      rejectedBy: admin && admin.email ? admin.email : 'admin'
+    });
+  }
+
+  function revokeAccessUser(uid) {
+    if (!uid || !firebaseUsersRef) return;
+    const admin = window.firebase && window.firebase.auth && window.firebase.auth().currentUser;
+    if (!confirm('Забрать доступ у этого сотрудника? Он больше не сможет войти в тренажёр.')) return;
+    firebaseUsersRef.child(uid).update({
+      approved: false,
+      status: 'revoked',
+      revokedAt: new Date().toISOString(),
+      revokedBy: admin && admin.email ? admin.email : 'admin'
+    });
   }
 
   function renderTrash() {

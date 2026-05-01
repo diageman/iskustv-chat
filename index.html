@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="trainer-modal.css" />
   <link rel="stylesheet" href="admin-lock.css" />
   <link rel="stylesheet" href="admin-click-fix.css" />
+  <link rel="stylesheet" href="access-requests.css" />
 </head>
 <body class="crm-body auth-locked">
   <div class="crm-app">
@@ -204,6 +205,17 @@
         </div>
 
         <div class="admin-grid admin-grid-bottom admin-private-zone">
+          <section class="admin-card access-requests-card">
+            <div class="admin-card-head">
+              <div>
+                <p class="section-label">Доступ сотрудников</p>
+                <h3>Заявки на вход</h3>
+              </div>
+            </div>
+            <div class="access-requests-list" id="accessRequestsList"></div>
+            <p class="admin-footnote">Новый сотрудник может зарегистрироваться, но войдёт в тренажёр только после кнопки «Пустить».</p>
+          </section>
+
           <section class="admin-card trainer-notes-card">
             <div class="admin-card-head">
               <div>
